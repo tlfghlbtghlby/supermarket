@@ -1,0 +1,145 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Debtor Validator
+    function isValidDebtor(data) {
+      return data.id is string && isValidId(data.id)
+        && data.userId is string && isOwner(data.userId)
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 150
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 50))
+        && (!('address' in data) || (data.address is string && data.address.size() <= 300))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && (!('creditLimit' in data) || (data.creditLimit is number && data.creditLimit >= 0))
+        && data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    // Transaction Validator
+    function isValidTransaction(data) {
+      return data.id is string && isValidId(data.id)
+        && data.userId is string && isOwner(data.userId)
+        && data.debtorId is string && isValidId(data.debtorId)
+        && (data.type == 'DEBT' || data.type == 'PAYMENT')
+        && (data.amount is number || data.amount is int) && data.amount > 0
+        && data.date is string && data.date.size() <= 64
+        && data.description is string && data.description.size() <= 500
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && (!('paymentMethod' in data) || (data.paymentMethod in ['CASH', 'TRANSFER', 'CARD', 'OTHER']))
+        && (!('invoiceNumber' in data) || (data.invoiceNumber is string && data.invoiceNumber.size() <= 100))
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    // Store Settings Validator
+    function isValidStoreSettings(data) {
+      return data.id is string && isValidId(data.id)
+        && data.userId is string && isOwner(data.userId)
+        && data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 150
+        && (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 100))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 50))
+        && (!('address' in data) || (data.address is string && data.address.size() <= 300))
+        && data.currency is string && data.currency.size() <= 20
+        && (!('customCurrencyName' in data) || (data.customCurrencyName is string && data.customCurrencyName.size() <= 50))
+        && (!('customWhatsAppMessage' in data) || (data.customWhatsAppMessage is string && data.customWhatsAppMessage.size() <= 1000));
+    }
+
+    // User Profile Validator
+    function isValidUserProfile(data) {
+      return data.uid is string && isOwner(data.uid)
+        && data.email is string && data.email.size() <= 200
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 150))
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500));
+    }
+
+    // Connection Health Test
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+
+    // Debtors Collection
+    match /debtors/{debtorId} {
+      allow get: if isSignedIn() && isValidId(debtorId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(debtorId) 
+                    && incoming().id == debtorId 
+                    && incoming().userId == request.auth.uid 
+                    && isValidDebtor(incoming());
+      allow update: if isSignedIn() && isValidId(debtorId) 
+                    && existing().userId == request.auth.uid 
+                    && incoming().userId == request.auth.uid 
+                    && incoming().id == debtorId 
+                    && isValidDebtor(incoming());
+      allow delete: if isSignedIn() && isValidId(debtorId) 
+                    && existing().userId == request.auth.uid;
+    }
+
+    // Transactions Collection
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && isValidId(transactionId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(transactionId) 
+                    && incoming().id == transactionId 
+                    && incoming().userId == request.auth.uid 
+                    && isValidTransaction(incoming());
+      allow update: if isSignedIn() && isValidId(transactionId) 
+                    && existing().userId == request.auth.uid 
+                    && incoming().userId == request.auth.uid 
+                    && incoming().id == transactionId 
+                    && isValidTransaction(incoming());
+      allow delete: if isSignedIn() && isValidId(transactionId) 
+                    && existing().userId == request.auth.uid;
+    }
+
+    // Store Settings Collection
+    match /settings/{settingId} {
+      allow get: if isSignedIn() && isValidId(settingId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(settingId) 
+                    && incoming().userId == request.auth.uid 
+                    && isValidStoreSettings(incoming());
+      allow update: if isSignedIn() && isValidId(settingId) 
+                    && existing().userId == request.auth.uid 
+                    && incoming().userId == request.auth.uid 
+                    && isValidStoreSettings(incoming());
+      allow delete: if isSignedIn() && isValidId(settingId) 
+                    && existing().userId == request.auth.uid;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create, update: if isSignedIn() && isValidId(userId) 
+                            && userId == request.auth.uid 
+                            && incoming().uid == request.auth.uid 
+                            && isValidUserProfile(incoming());
+      allow delete: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
+    }
+  }
+}

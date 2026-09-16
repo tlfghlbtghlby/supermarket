@@ -1,0 +1,8 @@
+{
+  "name": "Remix دفتر ديون السوبرماركت",
+  "description": "برنامج محاسبي متكامل لتسجيل ومتابعة ديون الزبائن والمشتريات الآجلة والمدفوعات للسوبرماركت والبقالة مع كشوف حسابات وتنبيهات واتساب.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "debtor": {
+      "title": "Debtor",
+      "description": "Customer with credit account in the supermarket",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "address": { "type": "string", "maxLength": 300 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "creditLimit": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name", "createdAt"]
+    },
+    "transaction": {
+      "title": "Transaction",
+      "description": "Debt or payment transaction record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "debtorId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["DEBT", "PAYMENT"] },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "description": { "type": "string", "maxLength": 500 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "TRANSFER", "CARD", "OTHER"] },
+        "invoiceNumber": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "debtorId", "type", "amount", "date", "description"]
+    },
+    "storeSettings": {
+      "title": "StoreSettings",
+      "description": "Configuration and settings for the supermarket",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "storeName": { "type": "string", "maxLength": 150 },
+        "ownerName": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "address": { "type": "string", "maxLength": 300 },
+        "currency": { "type": "string", "maxLength": 20 },
+        "customCurrencyName": { "type": "string", "maxLength": 50 },
+        "customWhatsAppMessage": { "type": "string", "maxLength": 1000 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "storeName", "currency"]
+    },
+    "userProfile": {
+      "title": "UserProfile",
+      "description": "User profile data for logged-in user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 200 },
+        "displayName": { "type": "string", "maxLength": 150 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "lastActive": { "type": "string", "format": "date-time" },
+        "role": { "type": "string", "enum": ["OWNER", "STAFF"] }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/debtors/{debtorId}": {
+      "schema": { "$ref": "debtor" },
+      "description": "Collection of debtor customers per user"
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "transaction" },
+      "description": "Collection of debt and payment transactions per user"
+    },
+    "/settings/{userId}": {
+      "schema": { "$ref": "storeSettings" },
+      "description": "Store settings document keyed by user ID"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "userProfile" },
+      "description": "User profile collection"
+    }
+  }
+}
