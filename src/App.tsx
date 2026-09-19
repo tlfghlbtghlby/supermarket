@@ -476,8 +476,13 @@ export default function App() {
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4 space-y-4" dir="rtl">
-        <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-500/20 animate-pulse">
-          <BookOpen className="w-8 h-8" />
+        <div className="w-20 h-20 rounded-3xl p-1 bg-gradient-to-tr from-blue-600 to-emerald-500 shadow-xl shadow-blue-500/25 animate-pulse">
+          <img
+            src="./icon-192.png"
+            alt="أيقونة التطبيق"
+            className="w-full h-full rounded-[22px] object-cover"
+            referrerPolicy="no-referrer"
+          />
         </div>
         <div className="text-center space-y-1.5">
           <h2 className="text-xl font-bold text-white tracking-tight">دفتر ديون السوبرماركت</h2>

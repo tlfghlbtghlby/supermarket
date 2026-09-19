@@ -163,8 +163,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
       <div className="w-full max-w-md relative z-10 space-y-6">
         {/* App Brand Header */}
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 shadow-lg shadow-blue-500/20 text-white mb-1">
-            <BookOpen className="w-9 h-9" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl p-1 bg-gradient-to-tr from-blue-600 to-emerald-500 shadow-xl shadow-blue-500/25 mb-1">
+            <img
+              src="./icon-192.png"
+              alt="أيقونة تطبيق دفتر ديون السوبرماركت"
+              className="w-full h-full rounded-[22px] object-cover"
+              referrerPolicy="no-referrer"
+            />
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
             دفتر ديون السوبرماركت
