@@ -689,12 +689,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
 
             <div className="flex flex-wrap gap-2.5">
+              <a
+                href="./dist.zip"
+                download="supermarket-dist.zip"
+                className="px-3.5 py-2 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-blue-500" />
+                <span>تنزيل حزمة الإنتاج المجمعة (dist.zip)</span>
+              </a>
+
               <button
                 type="button"
                 onClick={handleExportBackup}
                 className="px-3.5 py-2 bg-white dark:bg-[#161c2d] hover:bg-slate-100 dark:hover:bg-[#1d273f] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-[#2b3957] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
-                <Download className="w-3.5 h-3.5 text-blue-500" />
+                <Download className="w-3.5 h-3.5 text-slate-500" />
                 <span>تحميل نسخة احتياطية (JSON)</span>
               </button>
 
