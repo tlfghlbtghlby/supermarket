@@ -21,26 +21,52 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const env = (import.meta as any)?.env || {};
+
+const activeConfig = {
+  ...firebaseConfig,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId,
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey,
+  authDomain:
+    env.VITE_FIREBASE_AUTH_DOMAIN ||
+    `${env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId}.firebaseapp.com`,
+  storageBucket:
+    env.VITE_FIREBASE_STORAGE_BUCKET ||
+    `${env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId}.firebasestorage.app`,
+  appId: env.VITE_FIREBASE_APP_ID || firebaseConfig.appId,
+};
+
+const app = getApps().length === 0 ? initializeApp(activeConfig) : getApp();
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
 // Initialize Firestore with multi-tab offline persistence
+const databaseId =
+  firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+    ? firebaseConfig.firestoreDatabaseId
+    : undefined;
+
 let firestoreDb: any;
 try {
-  firestoreDb = initializeFirestore(
-    app,
-    {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
-    },
-    firebaseConfig.firestoreDatabaseId
-  );
+  firestoreDb = databaseId
+    ? initializeFirestore(
+        app,
+        {
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager(),
+          }),
+        },
+        databaseId
+      )
+    : initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+      });
 } catch {
   // If already initialized or fallback
-  firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  firestoreDb = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
 
 export const db = firestoreDb;
