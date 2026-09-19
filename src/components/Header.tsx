@@ -259,57 +259,48 @@ export const Header: React.FC<HeaderProps> = ({
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4 text-slate-700" />}
             </button>
 
-            {/* Phone Login or User Account Pill */}
-            <div className="relative hidden lg:block">
-              {appUser ? (
-                <button
-                  type="button"
-                  onClick={onOpenPhoneAuth}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-[#161c2d] hover:bg-slate-100 dark:hover:bg-[#1c2438] border border-slate-200 dark:border-[#27324c] rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
-                  title="إدارة الحساب ورقم الهاتف"
-                >
-                  <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold">
-                    {appUser.name[0] || 'U'}
-                  </div>
-                  <span className="max-w-[100px] truncate">{appUser.name}</span>
-                </button>
-              ) : user ? (
+            {/* User Account & Logout Pill */}
+            <div className="relative">
+              {user ? (
                 <div className="relative">
                   <button
+                    id="header-user-menu-btn"
                     type="button"
                     onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-50 dark:bg-[#161c2d] hover:bg-slate-100 dark:hover:bg-[#1c2438] border border-slate-200 dark:border-[#27324c] rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-slate-50 dark:bg-[#161c2d] hover:bg-slate-100 dark:hover:bg-[#1c2438] border border-slate-200 dark:border-[#27324c] rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                   >
                     <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold overflow-hidden">
                       {user.photoURL ? (
                         <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        user.displayName?.[0] || 'U'
+                        user.displayName?.[0] || user.email?.[0]?.toUpperCase() || 'U'
                       )}
                     </div>
-                    <span className="max-w-[110px] truncate">{user.displayName || user.email}</span>
+                    <span className="max-w-[80px] sm:max-w-[120px] truncate">{user.displayName || user.email?.split('@')[0]}</span>
                   </button>
 
                   {/* Dropdown Menu */}
                   {showUserMenu && (
                     <div
-                      className="absolute left-0 mt-1.5 w-60 bg-white dark:bg-[#161c2d] rounded-2xl shadow-xl border border-slate-200 dark:border-[#27324c] py-2 z-50 animate-in fade-in zoom-in-95 duration-150"
-                      onClick={() => setShowUserMenu(false)}
+                      className="absolute left-0 mt-1.5 w-64 bg-white dark:bg-[#161c2d] rounded-2xl shadow-xl border border-slate-200 dark:border-[#27324c] py-2 z-50 animate-in fade-in zoom-in-95 duration-150"
                     >
                       <div className="px-3.5 py-2 border-b border-slate-100 dark:border-[#27324c]">
                         <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
-                          {user.displayName || 'مستخدم السوبرماركت'}
+                          {user.displayName || settings.ownerName || 'صاحب المتجر'}
                         </p>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{user.email}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate dir-ltr text-left font-mono">{user.email}</p>
                         <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
                           <CheckCircle2 className="w-3 h-3" />
-                          <span>المزامنة السحابية مفعلة</span>
+                          <span>المزامنة السحابية مفعلة بالكامل</span>
                         </div>
                       </div>
 
                       <button
                         type="button"
-                        onClick={onForceSync}
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          onForceSync();
+                        }}
                         className="w-full px-3.5 py-2 text-right text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#1f283d] flex items-center gap-2 cursor-pointer"
                       >
                         <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -318,24 +309,18 @@ export const Header: React.FC<HeaderProps> = ({
 
                       <button
                         type="button"
-                        onClick={onLogout}
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          onLogout();
+                        }}
                         className="w-full px-3.5 py-2 text-right text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2 cursor-pointer border-t border-slate-100 dark:border-[#27324c] mt-1"
                       >
                         <LogOut className="w-3.5 h-3.5" />
-                        <span>تسجيل الخروج</span>
+                        <span>تسجيل الخروج من الحساب</span>
                       </button>
                     </div>
                   )}
                 </div>
-              ) : onOpenPhoneAuth ? (
-                <button
-                  type="button"
-                  onClick={onOpenPhoneAuth}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-xs"
-                >
-                  <LogIn className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  <span>تسجيل الدخول</span>
-                </button>
               ) : null}
             </div>
 

@@ -10,7 +10,7 @@ service cloud.firestore {
 
     // Helper functions
     function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     function incoming() {
@@ -38,6 +38,7 @@ service cloud.firestore {
         && (!('address' in data) || (data.address is string && data.address.size() <= 300))
         && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
         && (!('creditLimit' in data) || (data.creditLimit is number && data.creditLimit >= 0))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64))
         && data.createdAt is string && data.createdAt.size() <= 64;
     }
 
@@ -66,7 +67,8 @@ service cloud.firestore {
         && (!('address' in data) || (data.address is string && data.address.size() <= 300))
         && data.currency is string && data.currency.size() <= 20
         && (!('customCurrencyName' in data) || (data.customCurrencyName is string && data.customCurrencyName.size() <= 50))
-        && (!('customWhatsAppMessage' in data) || (data.customWhatsAppMessage is string && data.customWhatsAppMessage.size() <= 1000));
+        && (!('customWhatsAppMessage' in data) || (data.customWhatsAppMessage is string && data.customWhatsAppMessage.size() <= 1000))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
     // User Profile Validator

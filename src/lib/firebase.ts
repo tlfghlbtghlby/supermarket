@@ -1,5 +1,14 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  sendPasswordResetEmail,
+} from 'firebase/auth';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -111,6 +120,40 @@ export async function loginWithGoogle() {
     console.error('Login error:', error);
     throw error;
   }
+}
+
+export function formatAuthEmail(input: string): string {
+  const trimmed = input.trim();
+  if (trimmed.includes('@')) {
+    return trimmed.toLowerCase();
+  }
+  // If user entered a phone number or username, map it to a deterministic auth email
+  const clean = trimmed.replace(/[^a-zA-Z0-9]/g, '');
+  return `${clean || 'user'}@supermarket.app`;
+}
+
+export async function loginWithEmailOrPhone(identifier: string, password: string) {
+  const email = formatAuthEmail(identifier);
+  const result = await signInWithEmailAndPassword(auth, email, password);
+  return result.user;
+}
+
+export async function registerWithEmailOrPhone(
+  identifier: string,
+  password: string,
+  displayName?: string
+) {
+  const email = formatAuthEmail(identifier);
+  const result = await createUserWithEmailAndPassword(auth, email, password);
+  if (displayName && result.user) {
+    await updateProfile(result.user, { displayName });
+  }
+  return result.user;
+}
+
+export async function resetPasswordForUser(identifier: string) {
+  const email = formatAuthEmail(identifier);
+  await sendPasswordResetEmail(auth, email);
 }
 
 export async function logoutUser() {

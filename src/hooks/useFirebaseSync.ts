@@ -1,7 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { auth, loginWithGoogle, logoutUser, testFirestoreConnection } from '../lib/firebase';
+import {
+  auth,
+  loginWithGoogle,
+  loginWithEmailOrPhone,
+  registerWithEmailOrPhone,
+  resetPasswordForUser,
+  logoutUser,
+  testFirestoreConnection,
+} from '../lib/firebase';
 import { Debtor, Transaction, StoreSettings } from '../types';
+import { initialSettings } from '../data/initialData';
 import {
   subscribeToDebtors,
   subscribeToTransactions,
@@ -21,6 +30,7 @@ import {
   saveTransactions,
   loadSettings,
   saveSettings,
+  clearAllLocalStoreData,
 } from '../utils/storage';
 
 export function useFirebaseSync() {
@@ -33,7 +43,7 @@ export function useFirebaseSync() {
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Local state
+  // Local state - starts zeroed/clean
   const [debtors, setDebtors] = useState<Debtor[]>(() => loadDebtors());
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadTransactions());
   const [settings, setSettings] = useState<StoreSettings>(() => loadSettings());
@@ -69,6 +79,11 @@ export function useFirebaseSync() {
       if (currentUser) {
         // Test connection
         testFirestoreConnection().catch(() => {});
+      } else {
+        // When not logged in, clear in-memory state to ensure zeroed out view
+        setDebtors([]);
+        setTransactions([]);
+        clearAllLocalStoreData();
       }
     });
 
@@ -77,7 +92,11 @@ export function useFirebaseSync() {
 
   // Listen to Firestore real-time updates when user is authenticated
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setDebtors([]);
+      setTransactions([]);
+      return;
+    }
 
     setIsSyncing(true);
     let unsubDebtors: (() => void) | null = null;
@@ -88,28 +107,14 @@ export function useFirebaseSync() {
       unsubDebtors = subscribeToDebtors(
         user.uid,
         (cloudDebtors) => {
-          // If user has zero cloud data yet (brand new account) and has local data, migrate local data
-          if (cloudDebtors.length === 0 && !initialUploadDoneRef.current) {
-            const localD = loadDebtors();
-            const localTx = loadTransactions();
-            const localSet = loadSettings();
-            if (localD.length > 0) {
-              initialUploadDoneRef.current = true;
-              uploadLocalDataToCloud(localD, localTx, localSet, user.uid).catch((err) =>
-                console.error('Initial migration error:', err)
-              );
-              return;
-            }
-          }
-
-          if (cloudDebtors.length > 0 || initialUploadDoneRef.current) {
-            setDebtors(cloudDebtors);
-            saveDebtors(cloudDebtors);
-          }
+          // Always synchronize cloud state directly
+          setDebtors(cloudDebtors);
+          saveDebtors(cloudDebtors);
           setLastSyncedAt(new Date());
           setIsSyncing(false);
         },
         (err) => {
+          console.warn('Firestore debtors sync note:', err.message);
           setSyncError(err.message);
           setIsSyncing(false);
         }
@@ -124,6 +129,7 @@ export function useFirebaseSync() {
           setIsSyncing(false);
         },
         (err) => {
+          console.warn('Firestore transactions sync note:', err.message);
           setSyncError(err.message);
           setIsSyncing(false);
         }
@@ -135,11 +141,20 @@ export function useFirebaseSync() {
           if (cloudSettings && cloudSettings.storeName) {
             setSettings(cloudSettings);
             saveSettings(cloudSettings);
+          } else {
+            // First time login - initialize settings with user's name if available
+            const defaultSet: StoreSettings = {
+              ...initialSettings,
+              ownerName: user.displayName || '',
+              storeName: user.displayName ? `سوبرماركت ${user.displayName}` : 'دفتر ديون السوبرماركت',
+            };
+            syncStoreSettings(defaultSet, user.uid).catch(() => {});
           }
           setLastSyncedAt(new Date());
           setIsSyncing(false);
         },
         (err) => {
+          console.warn('Firestore settings sync note:', err.message);
           setSyncError(err.message);
           setIsSyncing(false);
         }
@@ -353,6 +368,18 @@ export function useFirebaseSync() {
     setSettings(loadSettings());
   }, []);
 
+  const logout = useCallback(async () => {
+    try {
+      await logoutUser();
+      setDebtors([]);
+      setTransactions([]);
+      setSettings(initialSettings);
+      clearAllLocalStoreData();
+    } catch (e) {
+      console.error('Logout error', e);
+    }
+  }, []);
+
   return {
     user,
     authLoading,
@@ -373,6 +400,9 @@ export function useFirebaseSync() {
     forceSyncToCloud,
     reloadDataFromStorage,
     loginWithGoogle,
-    logoutUser,
+    loginWithEmailOrPhone,
+    registerWithEmailOrPhone,
+    resetPasswordForUser,
+    logoutUser: logout,
   };
 }

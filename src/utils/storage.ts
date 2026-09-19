@@ -12,13 +12,12 @@ export function loadDebtors(): Debtor[] {
   try {
     const raw = localStorage.getItem(DEBTORS_KEY);
     if (!raw) {
-      saveDebtors(initialDebtors);
-      return initialDebtors;
+      return [];
     }
     return JSON.parse(raw);
   } catch (e) {
     console.error('Failed to load debtors from localStorage', e);
-    return initialDebtors;
+    return [];
   }
 }
 
@@ -34,13 +33,12 @@ export function loadTransactions(): Transaction[] {
   try {
     const raw = localStorage.getItem(TRANSACTIONS_KEY);
     if (!raw) {
-      saveTransactions(initialTransactions);
-      return initialTransactions;
+      return [];
     }
     return JSON.parse(raw);
   } catch (e) {
     console.error('Failed to load transactions from localStorage', e);
-    return initialTransactions;
+    return [];
   }
 }
 
@@ -57,13 +55,12 @@ export function loadSuppliers(): Supplier[] {
   try {
     const raw = localStorage.getItem(SUPPLIERS_KEY);
     if (!raw) {
-      saveSuppliers(initialSuppliers);
-      return initialSuppliers;
+      return [];
     }
     return JSON.parse(raw);
   } catch (e) {
     console.error('Failed to load suppliers from localStorage', e);
-    return initialSuppliers;
+    return [];
   }
 }
 
@@ -79,13 +76,12 @@ export function loadSupplierTransactions(): SupplierTransaction[] {
   try {
     const raw = localStorage.getItem(SUPPLIER_TRANSACTIONS_KEY);
     if (!raw) {
-      saveSupplierTransactions(initialSupplierTransactions);
-      return initialSupplierTransactions;
+      return [];
     }
     return JSON.parse(raw);
   } catch (e) {
     console.error('Failed to load supplier transactions from localStorage', e);
-    return initialSupplierTransactions;
+    return [];
   }
 }
 
@@ -157,6 +153,18 @@ export function logoutAppUser(): void {
   saveAppUser(null);
 }
 
+export function clearAllLocalStoreData(): void {
+  try {
+    localStorage.removeItem(DEBTORS_KEY);
+    localStorage.removeItem(TRANSACTIONS_KEY);
+    localStorage.removeItem(SUPPLIERS_KEY);
+    localStorage.removeItem(SUPPLIER_TRANSACTIONS_KEY);
+    localStorage.removeItem(APP_USER_KEY);
+  } catch (e) {
+    console.error('Failed to clear local store data', e);
+  }
+}
+
 export function exportBackupData(): string {
   const data = {
     version: '2.0',
@@ -194,9 +202,10 @@ export function importBackupData(jsonString: string): { success: boolean; messag
 }
 
 export function resetToSampleData(): void {
-  saveDebtors(initialDebtors);
-  saveTransactions(initialTransactions);
-  saveSuppliers(initialSuppliers);
-  saveSupplierTransactions(initialSupplierTransactions);
+  clearAllLocalStoreData();
+  saveDebtors([]);
+  saveTransactions([]);
+  saveSuppliers([]);
+  saveSupplierTransactions([]);
   saveSettings(initialSettings);
 }
