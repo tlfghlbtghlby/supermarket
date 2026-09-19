@@ -68,6 +68,14 @@ service cloud.firestore {
         && data.currency is string && data.currency.size() <= 20
         && (!('customCurrencyName' in data) || (data.customCurrencyName is string && data.customCurrencyName.size() <= 50))
         && (!('customWhatsAppMessage' in data) || (data.customWhatsAppMessage is string && data.customWhatsAppMessage.size() <= 1000))
+        && (!('enableWhatsAppAlerts' in data) || data.enableWhatsAppAlerts is bool)
+        && (!('storeWhatsAppPhone' in data) || (data.storeWhatsAppPhone is string && data.storeWhatsAppPhone.size() <= 50))
+        && (!('themeMode' in data) || (data.themeMode is string && data.themeMode.size() <= 30))
+        && (!('strictCreditLimit' in data) || data.strictCreditLimit is bool)
+        && (!('metaWhatsAppEnabled' in data) || data.metaWhatsAppEnabled is bool)
+        && (!('metaPhoneNumberId' in data) || (data.metaPhoneNumberId is string && data.metaPhoneNumberId.size() <= 100))
+        && (!('metaAccessToken' in data) || (data.metaAccessToken is string && data.metaAccessToken.size() <= 500))
+        && (!('metaBusinessAccountId' in data) || (data.metaBusinessAccountId is string && data.metaBusinessAccountId.size() <= 100))
         && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
@@ -86,51 +94,52 @@ service cloud.firestore {
 
     // Debtors Collection
     match /debtors/{debtorId} {
-      allow get: if isSignedIn() && isValidId(debtorId) && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(debtorId) && (resource == null || resource.data.userId == request.auth.uid);
       allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn() && isValidId(debtorId) 
                     && incoming().id == debtorId 
                     && incoming().userId == request.auth.uid 
                     && isValidDebtor(incoming());
       allow update: if isSignedIn() && isValidId(debtorId) 
-                    && existing().userId == request.auth.uid 
+                    && (resource == null || existing().userId == request.auth.uid) 
                     && incoming().userId == request.auth.uid 
                     && incoming().id == debtorId 
                     && isValidDebtor(incoming());
       allow delete: if isSignedIn() && isValidId(debtorId) 
-                    && existing().userId == request.auth.uid;
+                    && (resource == null || existing().userId == request.auth.uid);
     }
 
     // Transactions Collection
     match /transactions/{transactionId} {
-      allow get: if isSignedIn() && isValidId(transactionId) && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(transactionId) && (resource == null || resource.data.userId == request.auth.uid);
       allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn() && isValidId(transactionId) 
                     && incoming().id == transactionId 
                     && incoming().userId == request.auth.uid 
                     && isValidTransaction(incoming());
       allow update: if isSignedIn() && isValidId(transactionId) 
-                    && existing().userId == request.auth.uid 
+                    && (resource == null || existing().userId == request.auth.uid) 
                     && incoming().userId == request.auth.uid 
                     && incoming().id == transactionId 
                     && isValidTransaction(incoming());
       allow delete: if isSignedIn() && isValidId(transactionId) 
-                    && existing().userId == request.auth.uid;
+                    && (resource == null || existing().userId == request.auth.uid);
     }
 
     // Store Settings Collection
     match /settings/{settingId} {
-      allow get: if isSignedIn() && isValidId(settingId) && resource.data.userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(settingId) && (settingId == request.auth.uid || (resource != null && resource.data.userId == request.auth.uid));
+      allow list: if isSignedIn() && resource != null && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn() && isValidId(settingId) 
+                    && settingId == request.auth.uid
                     && incoming().userId == request.auth.uid 
                     && isValidStoreSettings(incoming());
       allow update: if isSignedIn() && isValidId(settingId) 
-                    && existing().userId == request.auth.uid 
+                    && settingId == request.auth.uid
                     && incoming().userId == request.auth.uid 
                     && isValidStoreSettings(incoming());
       allow delete: if isSignedIn() && isValidId(settingId) 
-                    && existing().userId == request.auth.uid;
+                    && settingId == request.auth.uid;
     }
 
     // Users Collection

@@ -49,7 +49,11 @@ export function subscribeToDebtors(
     },
     (error) => {
       onError?.(error);
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (e) {
+        console.warn('Firestore debtors snapshot note:', e);
+      }
     }
   );
 }
@@ -85,7 +89,11 @@ export function subscribeToTransactions(
     },
     (error) => {
       onError?.(error);
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (e) {
+        console.warn('Firestore transactions snapshot note:', e);
+      }
     }
   );
 }
@@ -93,7 +101,7 @@ export function subscribeToTransactions(
 // Subscribe to Settings in real-time
 export function subscribeToSettings(
   userId: string,
-  onUpdate: (settings: StoreSettings) => void,
+  onUpdate: (settings: StoreSettings | null) => void,
   onError?: (error: Error) => void
 ) {
   const path = `settings/${userId}`;
@@ -104,11 +112,17 @@ export function subscribeToSettings(
     (docSnap) => {
       if (docSnap.exists()) {
         onUpdate(docSnap.data() as StoreSettings);
+      } else {
+        onUpdate(null);
       }
     },
     (error) => {
       onError?.(error);
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (e) {
+        console.warn('Firestore settings snapshot note:', e);
+      }
     }
   );
 }
