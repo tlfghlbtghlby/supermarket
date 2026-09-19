@@ -83,6 +83,7 @@ export default function App() {
     deleteDebtor,
     addTransaction,
     updateTransactionNotes,
+    updateTransactionGroup,
     deleteTransaction,
     saveStoreSettings,
     forceSyncToCloud,
@@ -338,6 +339,11 @@ export default function App() {
   const handleUpdateTransactionNotes = async (transactionId: string, notes: string) => {
     await updateTransactionNotes(transactionId, notes);
     showToast('تم حفظ ملاحظات الحركة بنجاح.');
+  };
+
+  const handleUpdateTransactionGroup = async (transactionId: string, groupName: string) => {
+    await updateTransactionGroup(transactionId, groupName);
+    showToast('تم تحديث تصنيف الحركة بنجاح.');
   };
 
   const handleDeleteTransaction = async (transactionId: string) => {
@@ -775,20 +781,6 @@ export default function App() {
         onSubmit={handleSaveDebtor}
       />
 
-      {/* Quick Transaction Modal (Debt / Payment) */}
-      <QuickTransactionModal
-        isOpen={isQuickTxOpen}
-        type={quickTxType}
-        selectedDebtor={quickTxTargetDebtor}
-        allDebtors={debtorsWithStats}
-        settings={settings}
-        onClose={() => {
-          setIsQuickTxOpen(false);
-          setQuickTxTargetDebtor(null);
-        }}
-        onSubmit={handleAddTransaction}
-      />
-
       {/* Debtor Account Ledger Statement Modal */}
       <DebtorDetailModal
         debtor={activeDebtorDetail}
@@ -807,6 +799,7 @@ export default function App() {
         }}
         onDeleteTransaction={handleDeleteTransaction}
         onUpdateTransactionNotes={handleUpdateTransactionNotes}
+        onUpdateTransactionGroup={handleUpdateTransactionGroup}
         onEditDebtor={(d) => {
           setDebtorToEdit(d);
           setIsAddDebtorOpen(true);
@@ -814,6 +807,20 @@ export default function App() {
         onPrint={(d) => {
           setActivePrintDebtorId(d.id);
         }}
+      />
+
+      {/* Quick Transaction Modal (Debt / Payment) - Rendered after DebtorDetailModal to guarantee top stacking */}
+      <QuickTransactionModal
+        isOpen={isQuickTxOpen}
+        type={quickTxType}
+        selectedDebtor={quickTxTargetDebtor}
+        allDebtors={debtorsWithStats}
+        settings={settings}
+        onClose={() => {
+          setIsQuickTxOpen(false);
+          setQuickTxTargetDebtor(null);
+        }}
+        onSubmit={handleAddTransaction}
       />
 
       {/* Printable Statement Modal */}

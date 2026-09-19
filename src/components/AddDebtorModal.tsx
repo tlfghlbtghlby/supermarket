@@ -73,7 +73,7 @@ export const AddDebtorModal: React.FC<AddDebtorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-900/80 dark:bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
       <div className="bg-white dark:bg-[#131929] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border-2 border-slate-200 dark:border-[#27324c] animate-in fade-in zoom-in-95 duration-150">
         {/* Header matching Screenshot 4 */}
         <div className="p-4 sm:p-5 bg-slate-900 dark:bg-[#0d121f] text-white flex items-center justify-between border-b border-slate-800 dark:border-[#1e273d]">

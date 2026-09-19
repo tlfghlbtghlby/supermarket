@@ -3,6 +3,9 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signInAnonymously,
   signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -142,8 +145,36 @@ export async function loginWithGoogle() {
   try {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
+  } catch (error: any) {
+    console.error('Google popup login error:', error);
+    if (error?.code === 'auth/popup-blocked') {
+      try {
+        await signInWithRedirect(auth, googleProvider);
+        return null;
+      } catch (redirectError) {
+        throw redirectError;
+      }
+    }
+    throw error;
+  }
+}
+
+export async function checkRedirectAuthResult() {
+  try {
+    const result = await getRedirectResult(auth);
+    return result ? result.user : null;
   } catch (error) {
-    console.error('Login error:', error);
+    console.warn('Redirect auth result check:', error);
+    return null;
+  }
+}
+
+export async function loginAnonymously() {
+  try {
+    const result = await signInAnonymously(auth);
+    return result.user;
+  } catch (error) {
+    console.error('Anonymous login error:', error);
     throw error;
   }
 }
@@ -156,13 +187,25 @@ export function normalizeArabicDigits(str: string): string {
     .replace(/[۰-۹]/g, (d) => String(persianDigits.indexOf(d)));
 }
 
+export function normalizePhoneNumber(input: string): string {
+  let digits = normalizeArabicDigits(input).replace(/[^0-9]/g, '');
+  if (digits.startsWith('00964')) digits = digits.substring(5);
+  else if (digits.startsWith('964')) digits = digits.substring(3);
+  if (digits.startsWith('0')) digits = digits.substring(1);
+  return digits;
+}
+
 export function formatAuthEmail(input: string): string {
-  const normalized = normalizeArabicDigits(input.trim());
-  if (normalized.includes('@')) {
-    return normalized.toLowerCase();
+  const trimmed = normalizeArabicDigits(input.trim());
+  if (trimmed.includes('@')) {
+    return trimmed.toLowerCase();
   }
-  // If user entered a phone number or username, map it to a deterministic auth email
-  const clean = normalized.replace(/[^a-zA-Z0-9]/g, '');
+  // User entered phone number or account ID
+  const phoneDigits = normalizePhoneNumber(trimmed);
+  if (phoneDigits.length >= 6) {
+    return `phone_${phoneDigits}@supermarket.app`;
+  }
+  const clean = trimmed.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   return `${clean || 'user'}@supermarket.app`;
 }
 

@@ -14,6 +14,7 @@ export interface Transaction {
   notes?: string;
   balanceAfter?: number;
   previousBalance?: number;
+  groupName?: string;
 }
 
 export interface Debtor {

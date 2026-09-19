@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   Lock,
@@ -15,12 +15,15 @@ import {
   Loader2,
   ArrowRight,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 import {
   loginWithGoogle,
   loginWithEmailOrPhone,
   registerWithEmailOrPhone,
   resetPasswordForUser,
+  loginAnonymously,
+  checkRedirectAuthResult,
 } from '../lib/firebase';
 import { syncStoreSettings } from '../services/firebaseSync';
 import { initialSettings } from '../data/initialData';
@@ -39,25 +42,44 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isAnonymousLoading, setIsAnonymousLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Check if returning from Google Redirect
+  useEffect(() => {
+    checkRedirectAuthResult().then((user) => {
+      if (user) {
+        onLoginSuccess?.();
+      }
+    });
+  }, [onLoginSuccess]);
+
   const mapAuthError = (err: any): string => {
     const code = err?.code || '';
+    if (code.includes('operation-not-allowed')) {
+      return 'طريقة تسجيل الدخول هذه غير مفعلة في مشروع Firebase. يرجى تفعيلها من Firebase Console (Authentication > Sign-in method)، أو يمكنك النقر على "الدخول التجريبي / المحلي" للبدء فوراً دون انتظار.';
+    }
+    if (code.includes('unauthorized-domain')) {
+      return 'هذا النطاق غير مضاف إلى النطاقات المعتمدة (Authorized Domains) في لوحة Firebase Console. يمكنك المتابعة عبر "الدخول التجريبي / المحلي".';
+    }
     if (code.includes('user-not-found') || code.includes('invalid-credential')) {
-      return 'بيانات الدخول غير صحيحة، يرجى التأكد من البريد/الهاتف وكلمة المرور.';
+      return 'لم يتم العثور على حساب مسجل بهذا الرقم أو البريد الإلكتروني، أو كلمة المرور غير مطابقة. هل تود إنشاء حساب جديد بهذا الرقم الآن؟';
     }
     if (code.includes('wrong-password')) {
       return 'كلمة المرور غير صحيحة، يرجى المحاولة مجدداً أو النقر على "نسيت كلمة المرور".';
     }
     if (code.includes('email-already-in-use')) {
-      return 'هذا الحساب مسجل مسبقاً، يرجى التبديل إلى "تسجيل الدخول".';
+      return 'هذا الرقم أو البريد مسجل مسبقاً! انقر على تبويب "تسجيل الدخول" في الأعلى للمتابعة.';
     }
     if (code.includes('weak-password')) {
       return 'كلمة المرور ضعيفة، يرجى إدخال 6 أحرف أو أرقام على الأقل.';
     }
     if (code.includes('invalid-email')) {
-      return 'صيغة البريد الإلكتروني أو رقم الهاتف غير صحيحة.';
+      return 'يرجى إدخال رقم هاتف صحيح (مثل: 07701234567) أو بريد إلكتروني صحيح.';
+    }
+    if (code.includes('popup-blocked')) {
+      return 'تم حظر النافذة المنبثقة من قِبل المتصفح. يرجى السماح بالنوافذ المنبثقة ثم المحاولة مجدداً.';
     }
     if (code.includes('popup-closed-by-user')) {
       return 'تم إغلاق نافذة تسجيل الدخول بجوجل قبل إتمام العملية.';
@@ -73,12 +95,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setSuccessMsg(null);
     setIsGoogleLoading(true);
     try {
-      await loginWithGoogle();
-      onLoginSuccess?.();
+      const loggedUser = await loginWithGoogle();
+      if (loggedUser) {
+        onLoginSuccess?.();
+      }
     } catch (err: any) {
       setErrorMsg(mapAuthError(err));
     } finally {
       setIsGoogleLoading(false);
+    }
+  };
+
+  const handleAnonymousSignIn = async () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setIsAnonymousLoading(true);
+    try {
+      await loginAnonymously();
+      onLoginSuccess?.();
+    } catch (err: any) {
+      setErrorMsg(mapAuthError(err));
+    } finally {
+      setIsAnonymousLoading(false);
     }
   };
 
@@ -273,9 +311,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
           {/* Alert Messages */}
           {errorMsg && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-start gap-2.5 animate-in fade-in">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">{errorMsg}</div>
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-2.5 animate-in fade-in">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                <div className="leading-relaxed">{errorMsg}</div>
+              </div>
+              {mode === 'LOGIN' &&
+                (errorMsg.includes('لم يتم العثور') ||
+                  errorMsg.includes('غير مسجل') ||
+                  errorMsg.includes('بيانات الدخول')) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('REGISTER');
+                      setErrorMsg(null);
+                    }}
+                    className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>إنشاء حساب جديد بهذا الرقم فوراً</span>
+                  </button>
+                )}
             </div>
           )}
 
@@ -425,6 +481,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               </button>
             )}
           </form>
+
+          {/* Quick Offline / Guest Mode */}
+          <div className="pt-3 border-t border-slate-700/60 text-center space-y-1.5">
+            <button
+              id="offline-guest-signin-btn"
+              type="button"
+              disabled={isAnonymousLoading || isLoading || isGoogleLoading}
+              onClick={handleAnonymousSignIn}
+              className="w-full py-2.5 px-3 rounded-xl bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer border border-slate-600/50"
+            >
+              {isAnonymousLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+              ) : (
+                <Zap className="w-4 h-4 text-amber-400" />
+              )}
+              <span>الدخول كحساب تجريبي / العمل في الوضع المحلي (بدون إنترنت)</span>
+            </button>
+            <p className="text-[11px] text-slate-400 leading-normal">
+              يتيح لك البدء فوراً وتسجيل ديونك وحساباتك محلياً على جهازك دون انتظار تفعيل السحابة.
+            </p>
+          </div>
         </div>
 
         {/* Feature Highlights */}

@@ -20,6 +20,7 @@ import {
   syncTransaction,
   removeTransaction,
   updateTransactionNotesInFirestore,
+  updateTransactionGroupInFirestore,
   syncStoreSettings,
   uploadLocalDataToCloud,
 } from '../services/firebaseSync';
@@ -306,6 +307,30 @@ export function useFirebaseSync() {
     [transactions, user]
   );
 
+  const updateTransactionGroup = useCallback(
+    async (transactionId: string, groupName: string) => {
+      const trimmed = groupName.trim();
+      const updated = transactions.map((t) =>
+        t.id === transactionId ? { ...t, groupName: trimmed ? trimmed : undefined } : t
+      );
+      setTransactions(updated);
+      saveTransactions(updated);
+
+      if (user) {
+        try {
+          setIsSyncing(true);
+          await updateTransactionGroupInFirestore(transactionId, trimmed);
+          setLastSyncedAt(new Date());
+        } catch (err: any) {
+          console.warn('Transaction group cloud sync error:', err);
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+    },
+    [transactions, user]
+  );
+
   const deleteTransaction = useCallback(
     async (transactionId: string) => {
       const updated = transactions.filter((t) => t.id !== transactionId);
@@ -395,6 +420,7 @@ export function useFirebaseSync() {
     deleteDebtor,
     addTransaction,
     updateTransactionNotes,
+    updateTransactionGroup,
     deleteTransaction,
     saveStoreSettings,
     forceSyncToCloud,

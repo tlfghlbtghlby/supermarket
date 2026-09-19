@@ -191,6 +191,7 @@ export async function syncTransaction(tx: Transaction, userId: string): Promise<
     if (tx.notes) payload.notes = tx.notes;
     if (tx.paymentMethod) payload.paymentMethod = tx.paymentMethod;
     if (tx.invoiceNumber) payload.invoiceNumber = tx.invoiceNumber;
+    if (tx.groupName) payload.groupName = tx.groupName;
 
     await setDoc(docRef, payload, { merge: true });
   } catch (error) {
@@ -217,6 +218,20 @@ export async function updateTransactionNotesInFirestore(
   try {
     const docRef = doc(db, 'transactions', txId);
     await setDoc(docRef, { notes: notes.trim() || '' }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+// Update Transaction Group Name
+export async function updateTransactionGroupInFirestore(
+  txId: string,
+  groupName: string
+): Promise<void> {
+  const path = `transactions/${txId}`;
+  try {
+    const docRef = doc(db, 'transactions', txId);
+    await setDoc(docRef, { groupName: groupName.trim() || '' }, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }

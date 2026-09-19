@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { DebtorWithStats, Transaction, StoreSettings } from '../types';
 import {
   formatNumber,
@@ -35,6 +35,7 @@ import {
   Phone,
   MapPin,
   Bot,
+  FolderPlus,
 } from 'lucide-react';
 
 interface DebtorDetailModalProps {
@@ -46,6 +47,7 @@ interface DebtorDetailModalProps {
   onAddPayment: (debtor: DebtorWithStats) => void;
   onDeleteTransaction: (transactionId: string) => void;
   onUpdateTransactionNotes: (transactionId: string, notes: string) => void;
+  onUpdateTransactionGroup?: (transactionId: string, groupName: string) => void;
   onEditDebtor: (debtor: DebtorWithStats) => void;
   onPrint: (debtor: DebtorWithStats) => void;
   onDeleteDebtor?: (debtorId: string) => void;
@@ -60,6 +62,7 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
   onAddPayment,
   onDeleteTransaction,
   onUpdateTransactionNotes,
+  onUpdateTransactionGroup,
   onEditDebtor,
   onPrint,
   onDeleteDebtor,
@@ -72,6 +75,53 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
   const [showQrModal, setShowQrModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showQuickAddMenu, setShowQuickAddMenu] = useState(false);
+
+  // States for long-press action menu & sub-modals
+  const [selectedTxForActionModal, setSelectedTxForActionModal] = useState<
+    (Transaction & { balanceAfter?: number; previousBalance?: number }) | null
+  >(null);
+  const [groupModalTx, setGroupModalTx] = useState<
+    (Transaction & { balanceAfter?: number; previousBalance?: number }) | null
+  >(null);
+  const [groupNameInput, setGroupNameInput] = useState<string>('');
+  const [printReceiptTx, setPrintReceiptTx] = useState<
+    (Transaction & { balanceAfter?: number; previousBalance?: number; mode: 'RECEIPT' | 'PAYMENT_RECEIPT' }) | null
+  >(null);
+
+  const touchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isLongPressRef = useRef(false);
+
+  const handleTouchStart = (tx: any) => {
+    isLongPressRef.current = false;
+    touchTimerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(50);
+        } catch {}
+      }
+      setSelectedTxForActionModal(tx);
+    }, 450);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+  };
+
+  const handleTouchMove = () => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, tx: any) => {
+    e.preventDefault();
+    setSelectedTxForActionModal(tx);
+  };
 
   if (!debtor) return null;
 
@@ -458,20 +508,43 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
                 return (
                   <div
                     key={tx.id}
-                    className="bg-[#141c30] border border-[#202d4a] rounded-xl p-3.5 space-y-2.5 transition-all shadow-sm hover:border-[#2b3c63]"
+                    onTouchStart={() => handleTouchStart(tx)}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchMove={handleTouchMove}
+                    onContextMenu={(e) => handleContextMenu(e, tx)}
+                    className="bg-[#141c30] border border-[#202d4a] rounded-xl p-3.5 space-y-2.5 transition-all shadow-sm hover:border-[#2b3c63] select-none cursor-pointer"
                   >
                     {/* Top Row: Badge on right/left and Amount with Icon */}
                     <div className="flex items-center justify-between">
-                      {/* Left: Badge (تسديد / دين) */}
-                      <span
-                        className={`text-xs font-bold px-3 py-1 rounded-lg border ${
-                          isDebt
-                            ? 'bg-amber-950/40 text-amber-400 border-amber-800/60'
-                            : 'bg-emerald-950/40 text-emerald-400 border-emerald-800/60'
-                        }`}
-                      >
-                        {isDebt ? 'دين' : 'تسديد'}
-                      </span>
+                      {/* Left: Badge (تسديد / دين) + Group Badge + More Button */}
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`text-xs font-bold px-3 py-1 rounded-lg border ${
+                            isDebt
+                              ? 'bg-amber-950/40 text-amber-400 border-amber-800/60'
+                              : 'bg-emerald-950/40 text-emerald-400 border-emerald-800/60'
+                          }`}
+                        >
+                          {isDebt ? 'دين' : 'تسديد'}
+                        </span>
+                        {tx.groupName && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-950/70 text-blue-300 border border-blue-800/60 flex items-center gap-1">
+                            <FolderPlus className="w-3 h-3" />
+                            <span>{tx.groupName}</span>
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTxForActionModal(tx);
+                          }}
+                          className="p-1 text-slate-400 hover:text-white rounded hover:bg-[#1a243b] transition-colors"
+                          title="خيارات الحركة (أو اضغط مطولاً)"
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
 
                       {/* Right: Amount + Circular Arrow Icon + Date */}
                       <div className="flex items-center gap-2">
@@ -674,6 +747,302 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
               >
                 إغلاق
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* 1: Long-Press Action Modal (مطابق تماماً للتصميم في الصورة) */}
+        {selectedTxForActionModal && (
+          <div
+            className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+            onClick={() => setSelectedTxForActionModal(null)}
+          >
+            <div
+              className="bg-[#182238] border border-[#27344e] rounded-2xl w-full max-w-[280px] shadow-2xl p-6 text-center space-y-4 animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* اضافة الى مجموعة */}
+              <button
+                type="button"
+                onClick={() => {
+                  const tx = selectedTxForActionModal;
+                  setSelectedTxForActionModal(null);
+                  setGroupModalTx(tx);
+                  setGroupNameInput(tx.groupName || '');
+                }}
+                className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-1.5 transition-colors cursor-pointer border-b border-[#222f48]/70"
+              >
+                اضافة الى مجموعة
+              </button>
+
+              {/* ارسال على الواتساب */}
+              <button
+                type="button"
+                onClick={() => {
+                  const tx = selectedTxForActionModal;
+                  setSelectedTxForActionModal(null);
+                  handleSendSingleTxWhatsApp(tx);
+                }}
+                className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-1.5 transition-colors cursor-pointer border-b border-[#222f48]/70"
+              >
+                ارسال على الواتساب
+              </button>
+
+              {/* طباعة وصل */}
+              <button
+                type="button"
+                onClick={() => {
+                  const tx = selectedTxForActionModal;
+                  setSelectedTxForActionModal(null);
+                  setPrintReceiptTx({ ...tx, mode: 'RECEIPT' });
+                }}
+                className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-1.5 transition-colors cursor-pointer border-b border-[#222f48]/70"
+              >
+                طباعة وصل
+              </button>
+
+              {/* طباعة وصل استلام */}
+              <button
+                type="button"
+                onClick={() => {
+                  const tx = selectedTxForActionModal;
+                  setSelectedTxForActionModal(null);
+                  setPrintReceiptTx({ ...tx, mode: 'PAYMENT_RECEIPT' });
+                }}
+                className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-1.5 transition-colors cursor-pointer border-b border-[#222f48]/70"
+              >
+                طباعة وصل استلام
+              </button>
+
+              {/* حذف الحركة */}
+              <button
+                type="button"
+                onClick={() => {
+                  const txId = selectedTxForActionModal.id;
+                  setSelectedTxForActionModal(null);
+                  if (confirm('هل أنت متأكد من حذف هذه الحركة نهائياً وتحديث الرصيد؟')) {
+                    onDeleteTransaction(txId);
+                  }
+                }}
+                className="w-full text-center text-[#ef4444] hover:text-rose-400 font-bold text-base py-1.5 transition-colors cursor-pointer"
+              >
+                حذف الحركة
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 2: Group Assignment Modal */}
+        {groupModalTx && (
+          <div
+            className="fixed inset-0 z-[85] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+            onClick={() => setGroupModalTx(null)}
+          >
+            <div
+              className="bg-[#131929] border border-[#27324c] rounded-2xl w-full max-w-sm shadow-2xl p-5 text-right space-y-4 animate-in zoom-in-95"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-[#27324c] pb-3">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <FolderPlus className="w-5 h-5 text-blue-400" />
+                  <span>إضافة الحركة إلى مجموعة</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setGroupModalTx(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs text-slate-300 font-medium">اسم المجموعة / التصنيف:</label>
+                <input
+                  type="text"
+                  value={groupNameInput}
+                  onChange={(e) => setGroupNameInput(e.target.value)}
+                  placeholder="مثال: مشتريات الأسبوع، فاتورة خضار، حساب قديم..."
+                  className="w-full px-3.5 py-2.5 bg-[#0a0f1c] text-sm text-white rounded-xl border border-[#27324c] focus:outline-hidden focus:border-blue-500"
+                  autoFocus
+                />
+                {/* Quick Suggestion Tags */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {['مشتريات الأسبوع', 'فاتورة مواد غذائية', 'حساب قديم', 'أقساط شهرية', 'خضار وفواكه', 'لحوم ودواجن'].map(
+                    (tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setGroupNameInput(tag)}
+                        className="text-[11px] px-2.5 py-1 rounded-lg bg-[#1e273e] hover:bg-[#283552] text-slate-300 transition-colors"
+                      >
+                        {tag}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-[#27324c]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onUpdateTransactionGroup) {
+                      onUpdateTransactionGroup(groupModalTx.id, '');
+                    }
+                    setGroupModalTx(null);
+                  }}
+                  className="px-3 py-1.5 text-xs text-slate-400 hover:text-rose-400 font-medium transition-colors"
+                >
+                  إلغاء المجموعة
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setGroupModalTx(null)}
+                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-white font-medium"
+                  >
+                    إغلاق
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onUpdateTransactionGroup) {
+                        onUpdateTransactionGroup(groupModalTx.id, groupNameInput.trim());
+                      }
+                      setGroupModalTx(null);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+                  >
+                    حفظ التغييرات
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 3: Single Transaction Receipt Printable Modal */}
+        {printReceiptTx && (
+          <div className="fixed inset-0 z-[90] bg-black/85 backdrop-blur-xs flex flex-col items-center justify-start p-4 overflow-y-auto print:p-0 print:bg-white">
+            {/* Top Toolbar (Hidden on print) */}
+            <div className="w-full max-w-md flex items-center justify-between bg-slate-900 border border-slate-800 p-3 rounded-2xl mb-4 print:hidden shadow-xl">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Printer className="w-4 h-4 text-blue-400" />
+                <span>
+                  {printReceiptTx.mode === 'PAYMENT_RECEIPT' ? 'معاينة سند القبض' : 'معاينة وصل الحركة'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>طباعة الآن</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintReceiptTx(null)}
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Receipt Card */}
+            <div className="w-full max-w-md bg-white text-slate-900 rounded-2xl shadow-2xl p-6 print:shadow-none print:w-full print:max-w-none print:rounded-none border border-slate-200">
+              {/* Header */}
+              <div className="text-center border-b border-dashed border-slate-300 pb-4 space-y-1">
+                <h2 className="text-xl font-black text-slate-900">{settings.storeName}</h2>
+                {settings.storeAddress && (
+                  <p className="text-xs text-slate-600">{settings.storeAddress}</p>
+                )}
+                {settings.storePhone && (
+                  <p className="text-xs text-slate-600 font-mono" dir="ltr">
+                    هاتف: {settings.storePhone}
+                  </p>
+                )}
+                <div className="inline-block mt-2 px-3 py-1 bg-slate-100 border border-slate-300 rounded-md text-xs font-bold text-slate-800">
+                  {printReceiptTx.mode === 'PAYMENT_RECEIPT'
+                    ? 'سند قبض نقدي / وصل استلام'
+                    : 'وصل حركة حساب (دفتر الديون)'}
+                </div>
+              </div>
+
+              {/* Meta details */}
+              <div className="py-3 border-b border-slate-200 text-xs space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">اسم الزبون:</span>
+                  <span className="font-bold text-slate-900">{debtor.name}</span>
+                </div>
+                {debtor.phone && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">رقم الهاتف:</span>
+                    <span className="font-mono text-slate-700" dir="ltr">{debtor.phone}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">التاريخ والوقت:</span>
+                  <span className="font-mono text-slate-700" dir="ltr">{formatDate(printReceiptTx.date)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">رقم السند:</span>
+                  <span className="font-mono text-slate-700">#REC-{printReceiptTx.id.slice(-6).toUpperCase()}</span>
+                </div>
+              </div>
+
+              {/* Amount Highlight */}
+              <div className="my-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-1">
+                <div className="text-xs text-slate-500">
+                  {printReceiptTx.mode === 'PAYMENT_RECEIPT' ? 'المبلغ المقبوض' : 'قيمة الحركة'}
+                </div>
+                <div className="text-2xl font-black text-slate-900">
+                  {formatCurrency(printReceiptTx.amount, settings.currency)}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {printReceiptTx.type === 'DEBT' ? 'دين مضاف للحساب' : 'تسديد دفعة مخصومة من الحساب'}
+                </div>
+              </div>
+
+              {/* Balance Summary */}
+              <div className="space-y-2 text-xs border-b border-slate-200 pb-3">
+                <div className="flex justify-between text-slate-600">
+                  <span>الرصيد السابق للحركة:</span>
+                  <span className="font-bold">{formatCurrency(printReceiptTx.previousBalance || 0, settings.currency)}</span>
+                </div>
+                <div className="flex justify-between text-slate-900 font-bold bg-slate-100 p-2 rounded-lg">
+                  <span>الرصيد المتبقي بعد الحركة:</span>
+                  <span className="text-blue-700 font-black">{formatCurrency(printReceiptTx.balanceAfter || 0, settings.currency)}</span>
+                </div>
+                {printReceiptTx.description && (
+                  <div className="pt-1 text-slate-600">
+                    <span className="text-slate-500 block mb-0.5">ملاحظات وبيان الحركة:</span>
+                    <p className="bg-slate-50 p-2 rounded border border-slate-200 text-slate-800 leading-relaxed">
+                      {printReceiptTx.description}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Signature section */}
+              <div className="grid grid-cols-2 gap-4 pt-6 text-center text-xs text-slate-600">
+                <div>
+                  <div className="h-10 border-b border-dashed border-slate-300 mb-1"></div>
+                  <span>توقيع الزبون / المستلم</span>
+                </div>
+                <div>
+                  <div className="h-10 border-b border-dashed border-slate-300 mb-1"></div>
+                  <span>توقيع وختم المحل</span>
+                </div>
+              </div>
+
+              {/* Footer notice */}
+              <div className="text-center pt-5 text-[10px] text-slate-400">
+                شكراً لتعاملكم معنا • يرجى الاحتفاظ بهذا الوصل للمراجعة
+              </div>
             </div>
           </div>
         )}
