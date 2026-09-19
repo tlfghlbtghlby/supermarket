@@ -478,7 +478,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4 space-y-4" dir="rtl">
         <div className="w-20 h-20 rounded-3xl p-1 bg-gradient-to-tr from-blue-600 to-emerald-500 shadow-xl shadow-blue-500/25 animate-pulse">
           <img
-            src="./icon-192.png"
+            src="/icon-192.png"
             alt="أيقونة التطبيق"
             className="w-full h-full rounded-[22px] object-cover"
             referrerPolicy="no-referrer"

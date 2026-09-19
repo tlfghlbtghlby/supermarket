@@ -165,7 +165,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         <div className="text-center space-y-3">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl p-1 bg-gradient-to-tr from-blue-600 to-emerald-500 shadow-xl shadow-blue-500/25 mb-1">
             <img
-              src="./icon-192.png"
+              src="/icon-192.png"
               alt="أيقونة تطبيق دفتر ديون السوبرماركت"
               className="w-full h-full rounded-[22px] object-cover"
               referrerPolicy="no-referrer"
