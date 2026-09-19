@@ -122,13 +122,21 @@ export async function loginWithGoogle() {
   }
 }
 
+export function normalizeArabicDigits(str: string): string {
+  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  return str
+    .replace(/[٠-٩]/g, (d) => String(arabicDigits.indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String(persianDigits.indexOf(d)));
+}
+
 export function formatAuthEmail(input: string): string {
-  const trimmed = input.trim();
-  if (trimmed.includes('@')) {
-    return trimmed.toLowerCase();
+  const normalized = normalizeArabicDigits(input.trim());
+  if (normalized.includes('@')) {
+    return normalized.toLowerCase();
   }
   // If user entered a phone number or username, map it to a deterministic auth email
-  const clean = trimmed.replace(/[^a-zA-Z0-9]/g, '');
+  const clean = normalized.replace(/[^a-zA-Z0-9]/g, '');
   return `${clean || 'user'}@supermarket.app`;
 }
 

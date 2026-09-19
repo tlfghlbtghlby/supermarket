@@ -247,26 +247,64 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center gap-2">
                 <Shield className="w-5 h-5 text-blue-500" />
                 <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  تسجيل الدخول وحساب المسؤول
+                  الحساب وتسجيل الدخول السحابي
                 </h4>
               </div>
-              {appUser ? (
-                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-300 dark:border-emerald-800">
-                  مسجل برقم: {appUser.phone}
+              {user ? (
+                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>المزامنة السحابية نشطة</span>
                 </span>
               ) : (
                 <span className="text-xs text-slate-400">غير مسجل الدخول</span>
               )}
             </div>
 
+            {/* Cloud User Card & Logout */}
+            {user ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-[#101524] p-3 rounded-xl border border-slate-200 dark:border-[#202b44]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      user.displayName?.[0] || user.email?.[0]?.toUpperCase() || 'U'
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                      {user.displayName || settings.ownerName || 'المسؤول'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono dir-ltr text-right">
+                      {user.email}
+                    </p>
+                  </div>
+                </div>
+
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onLogout();
+                    }}
+                    className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 text-xs font-bold rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>تسجيل الخروج</span>
+                  </button>
+                )}
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-[#101524] p-3 rounded-xl border border-slate-200 dark:border-[#202b44]">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
+                <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold text-xs">
                   <Phone className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                    {appUser ? appUser.name : 'الدخول برقم الهاتف وكلمة المرور'}
+                    {appUser ? appUser.name : 'بيانات الهاتف والمسؤول الإضافي'}
                   </p>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     {appUser ? `الهاتف: ${appUser.phone}` : 'احمِ بيانات متجرك وسجل الدخول برقمك'}
@@ -278,9 +316,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={onOpenPhoneAuth}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-2xs transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-slate-200 dark:bg-[#1c2438] hover:bg-slate-300 dark:hover:bg-[#25304a] text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl shadow-2xs transition-colors cursor-pointer"
                 >
-                  {appUser ? 'إدارة الحساب' : 'تسجيل الدخول برقم الهاتف'}
+                  {appUser ? 'إدارة رقم الهاتف' : 'تسجيل رقم هاتف'}
                 </button>
               )}
             </div>
