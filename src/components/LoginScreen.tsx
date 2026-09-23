@@ -16,6 +16,9 @@ import {
   ArrowRight,
   Sparkles,
   Zap,
+  Copy,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
 import {
   loginWithGoogle,
@@ -30,9 +33,10 @@ import { initialSettings } from '../data/initialData';
 
 interface LoginScreenProps {
   onLoginSuccess?: () => void;
+  onOfflineContinue?: () => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOfflineContinue }) => {
   const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'FORGOT'>('LOGIN');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -44,7 +48,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isAnonymousLoading, setIsAnonymousLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [hasCopiedDomain, setHasCopiedDomain] = useState(false);
+
+  const currentDomain = typeof window !== 'undefined' ? window.location.hostname : '';
 
   // Check if returning from Google Redirect
   useEffect(() => {
@@ -57,11 +65,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
   const mapAuthError = (err: any): string => {
     const code = err?.code || '';
+    setErrorCode(code);
     if (code.includes('operation-not-allowed')) {
-      return 'طريقة تسجيل الدخول هذه غير مفعلة في مشروع Firebase. يرجى تفعيلها من Firebase Console (Authentication > Sign-in method)، أو يمكنك النقر على "الدخول التجريبي / المحلي" للبدء فوراً دون انتظار.';
+      return 'طريقة تسجيل الدخول هذه غير مفعلة في مشروع Firebase. يرجى تفعيلها من Firebase Console، أو يمكنك النقر على "المتابعة في الوضع المحلي" للبدء فوراً دون انتظار.';
     }
     if (code.includes('unauthorized-domain')) {
-      return 'هذا النطاق غير مضاف إلى النطاقات المعتمدة (Authorized Domains) في لوحة Firebase Console. يمكنك المتابعة عبر "الدخول التجريبي / المحلي".';
+      return `نطاق التطبيق (${currentDomain}) غير مضاف في قائمة النطاقات المعتمدة (Authorized Domains) بمشروع Firebase. يمكنك إضافته أو المتابعة فوراً في وضع العمل المحلي.`;
     }
     if (code.includes('user-not-found') || code.includes('invalid-credential')) {
       return 'لم يتم العثور على حساب مسجل بهذا الرقم أو البريد الإلكتروني، أو كلمة المرور غير مطابقة. هل تود إنشاء حساب جديد بهذا الرقم الآن؟';
@@ -79,19 +88,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
       return 'يرجى إدخال رقم هاتف صحيح (مثل: 07701234567) أو بريد إلكتروني صحيح.';
     }
     if (code.includes('popup-blocked')) {
-      return 'تم حظر النافذة المنبثقة من قِبل المتصفح. يرجى السماح بالنوافذ المنبثقة ثم المحاولة مجدداً.';
+      return 'تم حظر النافذة المنبثقة من قِبل المتصفح. يرجى السماح بالنوافذ المنبثقة أو المتابعة في الوضع المحلي.';
     }
     if (code.includes('popup-closed-by-user')) {
       return 'تم إغلاق نافذة تسجيل الدخول بجوجل قبل إتمام العملية.';
     }
     if (code.includes('network-request-failed')) {
-      return 'تعذر الاتصال بالخادم، يرجى التحقق من اتصالك بالإنترنت.';
+      return 'تعذر الاتصال بخادم Firebase أو تم حظر الاتصال في هذه البيئة. يمكنك المتابعة في وضع العمل المحلي بدون إنترنت.';
     }
-    return err?.message || 'حدث خطأ أثناء تسجيل الدخول، يرجى المحاولة لاحقاً.';
+    return err?.message || 'حدث خطأ أثناء تسجيل الدخول، يرجى المحاولة لاحقاً أو المتابعة محلياً.';
   };
 
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
+    setErrorCode(null);
     setSuccessMsg(null);
     setIsGoogleLoading(true);
     try {
@@ -100,6 +110,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         onLoginSuccess?.();
       }
     } catch (err: any) {
+      const code = err?.code || '';
+      // If user dismissed popup window, do not display error
+      if (code.includes('popup-closed-by-user') || code.includes('cancelled-popup-request')) {
+        return;
+      }
+      // If preview domain is not allowed or network request failed in iframe,
+      // seamlessly continue into the app's local offline mode so the cashier is NEVER blocked!
+      if (
+        code.includes('unauthorized-domain') ||
+        code.includes('network-request-failed') ||
+        code.includes('operation-not-allowed') ||
+        code.includes('auth/internal-error')
+      ) {
+        console.warn('Preview domain restricted in Firebase Auth, entering local ledger mode:', err);
+        if (onOfflineContinue) {
+          onOfflineContinue();
+        } else {
+          onLoginSuccess?.();
+        }
+        return;
+      }
       setErrorMsg(mapAuthError(err));
     } finally {
       setIsGoogleLoading(false);
@@ -108,13 +139,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
   const handleAnonymousSignIn = async () => {
     setErrorMsg(null);
+    setErrorCode(null);
     setSuccessMsg(null);
     setIsAnonymousLoading(true);
     try {
       await loginAnonymously();
       onLoginSuccess?.();
     } catch (err: any) {
-      setErrorMsg(mapAuthError(err));
+      console.warn('Anonymous cloud sign-in note, falling back to local offline mode:', err);
+      // Seamless fallback to local offline mode so the user is never blocked
+      if (onOfflineContinue) {
+        onOfflineContinue();
+      } else {
+        onLoginSuccess?.();
+      }
     } finally {
       setIsAnonymousLoading(false);
     }
@@ -232,6 +270,24 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
         {/* Auth Form Card */}
         <div className="bg-slate-800/95 border border-slate-700 rounded-2xl p-6 sm:p-7 shadow-2xl backdrop-blur-md space-y-5">
+          
+          {/* Quick 1-Click Direct Access */}
+          <button
+            id="direct-enter-app-btn"
+            type="button"
+            onClick={() => {
+              if (onOfflineContinue) {
+                onOfflineContinue();
+              } else {
+                onLoginSuccess?.();
+              }
+            }}
+            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-lg shadow-blue-500/20 transition-all cursor-pointer"
+          >
+            <Zap className="w-5 h-5 text-amber-300 fill-amber-300" />
+            <span>الدخول السريع لدفتر الديون (مباشر)</span>
+          </button>
+
           {/* Quick Google Sign In */}
           <div>
             <button
@@ -239,7 +295,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               type="button"
               disabled={isGoogleLoading || isLoading}
               onClick={handleGoogleSignIn}
-              className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm sm:text-base flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
+              className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm flex items-center justify-center gap-3 shadow-sm hover:shadow-md transition-all cursor-pointer disabled:opacity-50"
             >
               {isGoogleLoading ? (
                 <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
@@ -263,7 +319,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                   />
                 </svg>
               )}
-              <span>الدخول السريع بحساب Google</span>
+              <span>تسجيل الدخول بحساب Google</span>
             </button>
           </div>
 
@@ -311,11 +367,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
           {/* Alert Messages */}
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-2.5 animate-in fade-in">
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-3 animate-in fade-in">
               <div className="flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
                 <div className="leading-relaxed">{errorMsg}</div>
               </div>
+
+              {/* Seamless 1-click fallback to local mode if connection failed */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOfflineContinue) {
+                    onOfflineContinue();
+                  } else {
+                    onLoginSuccess?.();
+                  }
+                }}
+                className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-300" />
+                <span>المتابعة والدخول للدفتر فوراً</span>
+              </button>
+
               {mode === 'LOGIN' &&
                 (errorMsg.includes('لم يتم العثور') ||
                   errorMsg.includes('غير مسجل') ||
@@ -488,7 +561,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               id="offline-guest-signin-btn"
               type="button"
               disabled={isAnonymousLoading || isLoading || isGoogleLoading}
-              onClick={handleAnonymousSignIn}
+              onClick={() => {
+                if (onOfflineContinue) {
+                  onOfflineContinue();
+                } else {
+                  handleAnonymousSignIn();
+                }
+              }}
               className="w-full py-2.5 px-3 rounded-xl bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer border border-slate-600/50"
             >
               {isAnonymousLoading ? (

@@ -55,6 +55,9 @@ import {
   ShieldAlert,
   BookOpen,
   RefreshCw,
+  Copy,
+  Check,
+  LogOut,
 } from 'lucide-react';
 
 interface WhatsAppAlertPrompt {
@@ -65,6 +68,7 @@ interface WhatsAppAlertPrompt {
   type: TransactionType;
   amount: number;
   newBalance: number;
+  autoOpened?: boolean;
 }
 
 export default function App() {
@@ -122,8 +126,10 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activePrintDebtorId, setActivePrintDebtorId] = useState<string | null>(null);
 
-  // WhatsApp Prompt State
+  // WhatsApp Prompt & Logout Confirm States
   const [whatsAppPrompt, setWhatsAppPrompt] = useState<WhatsAppAlertPrompt | null>(null);
+  const [hasCopiedWhatsAppMsg, setHasCopiedWhatsAppMsg] = useState<boolean>(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState<boolean>(false);
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<{
@@ -277,7 +283,7 @@ export default function App() {
       );
     }
 
-    // Trigger WhatsApp notification if enabled and debtor has phone number
+    // Trigger WhatsApp notification if debtor has phone number
     if (targetDebtor?.phone) {
       const messageParams = {
         storeName: settings.storeName,
@@ -293,7 +299,18 @@ export default function App() {
       const waMsg = generateTransactionWhatsAppMessage(messageParams);
       const waUrl = generateTransactionWhatsAppUrl(targetDebtor.phone, messageParams);
 
-      // الطريقة الثانية: إرسال تلقائي في الخلفية عبر بوت Meta WhatsApp Cloud API
+      let opened = false;
+      // If autoOpenWhatsApp is true and waUrl exists, also attempt direct tab opening
+      if (waUrl && (data as any).autoOpenWhatsApp !== false) {
+        try {
+          const w = window.open(waUrl, '_blank');
+          opened = Boolean(w);
+        } catch (e) {
+          console.warn('Direct window open error:', e);
+        }
+      }
+
+      // الطريقة الأولى: إرسال تلقائي في الخلفية إذا تم تفعيل بوت Meta WhatsApp Cloud API
       if (settings.metaWhatsAppEnabled && settings.metaPhoneNumberId && settings.metaAccessToken) {
         showToast(`🤖 جاري إرسال إشعار الدين تلقائياً للزبون "${targetDebtor.name}" عبر البوت...`);
         sendMetaCloudMessage({
@@ -306,7 +323,7 @@ export default function App() {
             showToast(`✅ تم إرسال رسالة الواتساب تلقائياً للزبون "${targetDebtor.name}" عبر البوت.`);
           } else {
             showToast(`⚠️ تعذر الإرسال التلقائي عبر البوت: ${res.error}`);
-            // إتاحة الإرسال اليدوي كخيار بديل عند وجود مشكلة في رمز الوصول
+            // إتاحة التحويل اليدوي كخيار بديل
             setWhatsAppPrompt({
               debtorName: targetDebtor.name,
               phone: targetDebtor.phone,
@@ -315,14 +332,15 @@ export default function App() {
               type: data.type,
               amount: data.amount,
               newBalance,
+              autoOpened: opened,
             });
           }
         }).catch((err) => {
           console.error('Error sending bot message:', err);
           showToast(`⚠️ خطأ في الاتصال بالبوت: ${err.message}`);
         });
-      } else if (settings.enableWhatsAppAlerts) {
-        // الطريقة التقليدية (إشعار مع رابط wa.me)
+      } else {
+        // التحويل المباشر للواتساب وإظهار نافذة إرسال تفاصيل الفاتورة
         setWhatsAppPrompt({
           debtorName: targetDebtor.name,
           phone: targetDebtor.phone,
@@ -331,6 +349,7 @@ export default function App() {
           type: data.type,
           amount: data.amount,
           newBalance,
+          autoOpened: opened,
         });
       }
     }
@@ -431,17 +450,23 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
-    if (confirm('هل أنت متأكد من رغبتك في تسجيل الخروج من دفتر الديون؟')) {
-      try {
-        setIsSettingsOpen(false);
-        setSuppliers([]);
-        setSupplierTransactions([]);
-        await logoutUser();
-        showToast('تم تسجيل الخروج بنجاح.');
-      } catch {
-        showToast('حدث خطأ أثناء تسجيل الخروج.', 'warn');
-      }
+  const handleLogout = () => {
+    setIsLogoutConfirmOpen(true);
+  };
+
+  const executeLogout = async () => {
+    setIsLogoutConfirmOpen(false);
+    setIsSettingsOpen(false);
+    setSuppliers([]);
+    setSupplierTransactions([]);
+    logoutAppUser();
+    setAppUser(null);
+    try {
+      await logoutUser();
+      showToast('تم تسجيل الخروج بنجاح.');
+    } catch (e) {
+      console.error('Logout error:', e);
+      showToast('تم تسجيل الخروج محلياً.');
     }
   };
 
@@ -479,6 +504,25 @@ export default function App() {
     setAppUser(loadAppUser());
   };
 
+  const handleOfflineContinue = () => {
+    let localUser = loadAppUser();
+    if (!localUser) {
+      localUser = {
+        id: 'local_admin_' + Date.now().toString(36),
+        name: settings.ownerName || 'مدير المتجر (وضع محلي)',
+        phone: settings.phone || '07700000000',
+        role: 'ADMIN',
+        isLoggedIn: true,
+      };
+      saveAppUser(localUser);
+    }
+    setAppUser(localUser);
+    handleReloadAll();
+    showToast('تم تفعيل وضع العمل المحلي بنجاح. يمكنك إدارة الزبائن والديون والمدفوعات بأمان.');
+  };
+
+  const isAuthenticated = Boolean(user || appUser);
+
   // Authentication Gates - Do not show any data before login
   if (authLoading) {
     return (
@@ -502,8 +546,16 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return <LoginScreen onLoginSuccess={() => showToast('أهلاً بك! تم تسجيل الدخول والمزامنة بنجاح.')} />;
+  if (!isAuthenticated) {
+    return (
+      <LoginScreen
+        onLoginSuccess={() => {
+          handleReloadAll();
+          showToast('أهلاً بك! تم تسجيل الدخول والمزامنة بنجاح.');
+        }}
+        onOfflineContinue={handleOfflineContinue}
+      />
+    );
   }
 
   return (
@@ -697,61 +749,147 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating WhatsApp Notification Alert Prompt (Auto-appears upon new debt/payment) */}
+      {/* WhatsApp Notification & Redirection Modal */}
       {whatsAppPrompt && (
-        <div className="fixed bottom-4 left-4 right-4 sm:right-auto sm:max-w-md z-50 animate-in slide-in-from-bottom-5 duration-300">
-          <div className="bg-slate-900 dark:bg-[#131929] text-white rounded-2xl p-4 shadow-2xl border-2 border-emerald-500/80 flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-2">
+        <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-900/80 dark:bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-[#131929] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-emerald-500/80 animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center text-white shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
                   <MessageCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-emerald-400">إشعار واتساب التلقائي جاهز</h4>
-                  <p className="text-[11px] text-slate-300">
-                    تم إعداد رسالة تفصيلية للزبون <span className="font-bold text-white">{whatsAppPrompt.debtorName}</span>
+                  <h3 className="text-base font-bold">
+                    {whatsAppPrompt.type === 'DEBT' ? 'تم تسجيل الدين بنجاح! 🛒' : 'تم تسجيل الدفعة بنجاح! 💵'}
+                  </h3>
+                  <p className="text-xs text-emerald-100">
+                    الزبون: <span className="font-bold text-white">{whatsAppPrompt.debtorName}</span> ({whatsAppPrompt.phone})
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setWhatsAppPrompt(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-2.5 bg-slate-800/80 dark:bg-[#0d121f] rounded-xl text-[11px] text-slate-300 border border-slate-700/60 flex items-center justify-between">
-              <div>
-                <span>المبلغ: </span>
-                <span className="font-black text-white">{formatCurrency(whatsAppPrompt.amount, settings.currency)}</span>
+            {/* Content */}
+            <div className="p-4 sm:p-5 space-y-4">
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800/80 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>
+                  {whatsAppPrompt.autoOpened
+                    ? 'تم فتح نافذة محادثة واتساب لإرسال تفاصيل الفاتورة. يمكنك الضغط على الزر بالأسفل إذا لم تفتح.'
+                    : 'جاهز للإرسال! انقر على الزر بالأسفل لفتح محادثة واتساب وإرسال تفاصيل الفاتورة مباشرة.'}
+                </span>
               </div>
-              <div>
-                <span>صافي الدين الكلي: </span>
-                <span className="font-black text-emerald-400">{formatCurrency(whatsAppPrompt.newBalance, settings.currency)}</span>
+
+              {/* Balance Summary Box */}
+              <div className="p-3.5 bg-slate-50 dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#27324c] space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {whatsAppPrompt.type === 'DEBT' ? 'مبلغ الدين الجديد:' : 'المبلغ المسدد:'}
+                  </span>
+                  <span className="font-black text-sm text-slate-900 dark:text-slate-100">
+                    {formatCurrency(whatsAppPrompt.amount, settings.currency)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-t border-slate-200 dark:border-[#27324c] pt-2">
+                  <span className="text-slate-500 dark:text-slate-400">صافي الدين الكلي المتبقي:</span>
+                  <span className="font-black text-sm text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(whatsAppPrompt.newBalance, settings.currency)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="space-y-2 pt-1">
+                <a
+                  href={whatsAppPrompt.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setWhatsAppPrompt(null)}
+                  className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  <span>فتح محادثة واتساب وإرسال الفاتورة ({whatsAppPrompt.phone})</span>
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(whatsAppPrompt.messageText);
+                      setHasCopiedWhatsAppMsg(true);
+                      setTimeout(() => setHasCopiedWhatsAppMsg(false), 3000);
+                    }}
+                    className="py-2.5 px-3 bg-slate-100 dark:bg-[#182137] hover:bg-slate-200 dark:hover:bg-[#202b46] text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {hasCopiedWhatsAppMsg ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">تم نسخ النص!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>نسخ نص الرسالة</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWhatsAppPrompt(null)}
+                    className="py-2.5 px-3 bg-slate-100 dark:bg-[#182137] hover:bg-slate-200 dark:hover:bg-[#202b46] text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    إغلاق
+                  </button>
+                </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
 
-            <div className="flex items-center gap-2">
-              <a
-                href={whatsAppPrompt.url}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => setWhatsAppPrompt(null)}
-                className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>إرسال عبر واتساب الآن ({whatsAppPrompt.phone})</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-              <button
-                type="button"
-                onClick={() => setWhatsAppPrompt(null)}
-                className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
-              >
-                تخطي
-              </button>
+      {/* Logout Confirmation Modal */}
+      {isLogoutConfirmOpen && (
+        <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-900/80 dark:bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-[#131929] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border-2 border-rose-200 dark:border-rose-900/60 animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+                <LogOut className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                تسجيل الخروج من دفتر الديون
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                هل أنت متأكد من رغبتك في تسجيل الخروج؟ ستتمكن من تسجيل الدخول لاحقاً وجميع بياناتك محفوظة ومزامنة بأمان.
+              </p>
+
+              <div className="pt-2 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLogoutConfirmOpen(false)}
+                  className="py-2.5 px-3 bg-slate-100 dark:bg-[#182137] hover:bg-slate-200 dark:hover:bg-[#202b46] text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  id="confirm-logout-button"
+                  type="button"
+                  onClick={executeLogout}
+                  className="py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>تأكيد الخروج</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

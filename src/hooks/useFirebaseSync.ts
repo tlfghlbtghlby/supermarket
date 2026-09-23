@@ -81,10 +81,10 @@ export function useFirebaseSync() {
         // Test connection
         testFirestoreConnection().catch(() => {});
       } else {
-        // When not logged in, clear in-memory state to ensure zeroed out view
-        setDebtors([]);
-        setTransactions([]);
-        clearAllLocalStoreData();
+        // When not logged into Firebase, keep local data available for offline/local mode
+        setDebtors(loadDebtors());
+        setTransactions(loadTransactions());
+        setSettings(loadSettings());
       }
     });
 
@@ -94,8 +94,8 @@ export function useFirebaseSync() {
   // Listen to Firestore real-time updates when user is authenticated
   useEffect(() => {
     if (!user) {
-      setDebtors([]);
-      setTransactions([]);
+      setDebtors(loadDebtors());
+      setTransactions(loadTransactions());
       return;
     }
 
@@ -396,12 +396,14 @@ export function useFirebaseSync() {
   const logout = useCallback(async () => {
     try {
       await logoutUser();
+    } catch (e) {
+      console.error('Logout error', e);
+    } finally {
+      setUser(null);
       setDebtors([]);
       setTransactions([]);
       setSettings(initialSettings);
       clearAllLocalStoreData();
-    } catch (e) {
-      console.error('Logout error', e);
     }
   }, []);
 

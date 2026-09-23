@@ -8,6 +8,7 @@ import {
   generateWhatsAppLink,
   generateWhatsAppStatementMessage,
   generateTransactionWhatsAppMessage,
+  cleanPhoneNumber,
 } from '../utils/formatters';
 import { sendMetaCloudMessage } from '../services/whatsappBot';
 import {
@@ -203,10 +204,10 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
       }
     }
 
-    let cleanPhone = debtor.phone.replace(/[^0-9]/g, '');
-    if (cleanPhone.startsWith('07')) cleanPhone = '964' + cleanPhone.substring(1);
-    else if (cleanPhone.startsWith('0')) cleanPhone = '964' + cleanPhone.substring(1);
-    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    const cleanPhone = cleanPhoneNumber(debtor.phone);
+    if (cleanPhone) {
+      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    }
   };
 
   const handleSendStatementViaBot = async () => {

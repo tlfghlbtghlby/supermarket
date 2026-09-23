@@ -137,16 +137,38 @@ export function computeSupplierStats(
   };
 }
 
+export function normalizeArabicDigits(str: string): string {
+  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  return (str || '')
+    .replace(/[٠-٩]/g, (d) => String(arabicDigits.indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String(persianDigits.indexOf(d)));
+}
+
 export function cleanPhoneNumber(phone: string): string {
-  let clean = phone.replace(/[^0-9]/g, '');
-  if (clean.startsWith('07')) {
-    clean = '964' + clean.substring(1);
+  if (!phone) return '';
+  const normalized = normalizeArabicDigits(phone);
+  let clean = normalized.replace(/[^0-9]/g, '');
+  if (!clean) return '';
+
+  if (clean.startsWith('00964')) {
+    clean = '964' + clean.substring(5);
   } else if (clean.startsWith('00')) {
     clean = clean.substring(2);
-  } else if (clean.startsWith('+')) {
-    clean = clean.substring(1);
+  } else if (clean.startsWith('9640')) {
+    clean = '964' + clean.substring(4);
+  } else if (clean.startsWith('07')) {
+    clean = '964' + clean.substring(1);
   } else if (clean.startsWith('7') && clean.length === 10) {
     clean = '964' + clean;
+  } else if (clean.startsWith('0') && clean.length >= 10) {
+    if (clean.startsWith('05')) {
+      clean = '966' + clean.substring(1);
+    } else if (clean.startsWith('01') && clean.length === 11) {
+      clean = '20' + clean.substring(1);
+    } else {
+      clean = clean.substring(1);
+    }
   }
   return clean;
 }

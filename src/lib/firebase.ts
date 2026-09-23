@@ -39,37 +39,28 @@ const activeConfig = {
   appId: env.VITE_FIREBASE_APP_ID || firebaseConfig.appId,
 };
 
-const app = getApps().length === 0 ? initializeApp(activeConfig) : getApp();
+export const app = getApps().length === 0 ? initializeApp(activeConfig) : getApp();
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
 // Initialize Firestore with multi-tab offline persistence
-const databaseId =
-  firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
-    ? firebaseConfig.firestoreDatabaseId
-    : undefined;
+const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
 
 let firestoreDb: any;
 try {
-  firestoreDb = databaseId
-    ? initializeFirestore(
-        app,
-        {
-          localCache: persistentLocalCache({
-            tabManager: persistentMultipleTabManager(),
-          }),
-        },
-        databaseId
-      )
-    : initializeFirestore(app, {
-        localCache: persistentLocalCache({
-          tabManager: persistentMultipleTabManager(),
-        }),
-      });
+  firestoreDb = initializeFirestore(
+    app,
+    {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    },
+    databaseId
+  );
 } catch {
   // If already initialized or fallback
-  firestoreDb = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+  firestoreDb = getFirestore(app, databaseId);
 }
 
 export const db = firestoreDb;
@@ -131,7 +122,13 @@ export function handleFirestoreError(
 export async function testFirestoreConnection(): Promise<boolean> {
   if (!auth.currentUser) return false;
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 3500)
+    );
+    await Promise.race([
+      getDocFromServer(doc(db, 'test', 'connection')),
+      timeoutPromise,
+    ]);
     return true;
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
@@ -146,6 +143,11 @@ export async function loginWithGoogle() {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
   } catch (error: any) {
+    if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+      // User tapped outside or closed the popup; handle gracefully without console.error
+      console.warn('Google sign-in popup closed by user.');
+      return null;
+    }
     console.error('Google popup login error:', error);
     if (error?.code === 'auth/popup-blocked') {
       try {

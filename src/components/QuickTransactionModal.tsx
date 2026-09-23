@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DebtorWithStats, TransactionType, PaymentMethod, StoreSettings } from '../types';
-import { formatCurrency } from '../utils/formatters';
-import { X, PlusCircle, ArrowDownLeft, Calendar, StickyNote, Check } from 'lucide-react';
+import { formatCurrency, generateTransactionWhatsAppUrl } from '../utils/formatters';
+import { X, Check, MessageCircle, AlertCircle, Plus, ArrowDownLeft } from 'lucide-react';
 
 interface QuickTransactionModalProps {
   isOpen: boolean;
@@ -19,6 +19,7 @@ interface QuickTransactionModalProps {
     paymentMethod?: PaymentMethod;
     invoiceNumber?: string;
     date: string;
+    autoOpenWhatsApp?: boolean;
   }) => void;
 }
 
@@ -34,20 +35,20 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
   const [currentType, setCurrentType] = useState<TransactionType>(initialType);
   const [debtorId, setDebtorId] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
-  const [date, setDate] = useState<string>('');
+  const [sendWhatsApp, setSendWhatsApp] = useState<boolean>(true);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setCurrentType(initialType);
       setDebtorId(selectedDebtor ? selectedDebtor.id : (allDebtors[0]?.id || ''));
       setAmount('');
+      setDescription('');
       setNotes('');
-      setPaymentMethod('CASH');
-      const now = new Date();
-      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      setDate(now.toISOString().slice(0, 16));
+      setSendWhatsApp(true);
+      setFormError(null);
     }
   }, [isOpen, selectedDebtor, allDebtors, initialType]);
 
@@ -59,18 +60,52 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
   const projectedBal = currentType === 'DEBT' ? currentBal + parsedAmount : Math.max(0, currentBal - parsedAmount);
   const isDebt = currentType === 'DEBT';
 
+  const addQuickAmount = (val: number) => {
+    const currentVal = parseFloat(amount) || 0;
+    setAmount((currentVal + val).toString());
+    setFormError(null);
+  };
+
+  const quickDescriptions = ['مسواك', 'كارتات رصيد', 'ألبان واجبان', 'لحوم ودجاج', 'مواد تنظيف'];
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+
     if (!debtorId) {
-      alert('يرجى اختيار الزبون');
+      setFormError('يرجى اختيار الزبون');
       return;
     }
     if (parsedAmount <= 0) {
-      alert('يرجى إدخال مبلغ صحيح أكبر من الصفر');
+      setFormError('يرجى إدخال المبلغ');
       return;
     }
 
-    const finalDescription = notes.trim() || (isDebt ? 'تسجيل دين' : 'تسديد دفعة');
+    const finalDescription = description.trim() || (isDebt ? 'تسجيل دين' : 'تسديد دفعة');
+    const isoDate = new Date().toISOString();
+
+    // Open WhatsApp directly during the user click event
+    if (sendWhatsApp && currentDebtor?.phone) {
+      const waUrl = generateTransactionWhatsAppUrl(currentDebtor.phone, {
+        storeName: settings.storeName,
+        debtorName: currentDebtor.name,
+        transactionType: currentType,
+        transactionAmount: parsedAmount,
+        previousBalance: currentBal,
+        newBalance: projectedBal,
+        currency: settings.currency,
+        description: finalDescription,
+        date: isoDate,
+      });
+
+      if (waUrl) {
+        try {
+          window.open(waUrl, '_blank');
+        } catch (err) {
+          console.warn('WhatsApp window open error:', err);
+        }
+      }
+    }
 
     onSubmit({
       debtorId,
@@ -78,196 +113,273 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
       amount: parsedAmount,
       description: finalDescription,
       notes: notes.trim() || undefined,
-      paymentMethod: currentType === 'PAYMENT' ? paymentMethod : undefined,
-      date: date ? new Date(date).toISOString() : new Date().toISOString(),
+      paymentMethod: 'CASH',
+      date: isoDate,
+      autoOpenWhatsApp: sendWhatsApp,
     });
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-900/80 dark:bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-white dark:bg-[#131929] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border-2 border-slate-200 dark:border-[#27324c] animate-in fade-in zoom-in-95 duration-150">
-        {/* Header */}
-        <div className="p-4 sm:p-5 bg-slate-900 dark:bg-[#0d121f] text-white flex items-center justify-between border-b border-slate-800 dark:border-[#1e273d]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white">
-              {isDebt ? <PlusCircle className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
-            </div>
-            <div>
-              <h3 className="text-base sm:text-lg font-bold">
-                {isDebt ? 'تسجيل دين على زبون' : 'تسديد دفعة من زبون'}
-              </h3>
-              <p className="text-xs text-slate-300">
-                {currentDebtor ? `الزبون: ${currentDebtor.name}` : 'إضافة مبلغ وحركة جديدة'}
+    <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-900/60 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4" dir="rtl">
+      <div className="bg-white dark:bg-[#121727] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-150">
+        
+        {/* Header: Title & Customer Name */}
+        <div className="px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div className="space-y-0.5">
+            <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+              {isDebt ? (
+                <span className="text-blue-600 dark:text-blue-400">إضافة دين جديد</span>
+              ) : (
+                <span className="text-emerald-600 dark:text-emerald-400">تسجيل تسديد دفعة</span>
+              )}
+            </h3>
+            {currentDebtor && (
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
+                الزبون: <span className="font-bold text-slate-800 dark:text-slate-200">{currentDebtor.name}</span>
+                {currentDebtor.currentBalance > 0 && (
+                  <span className="mr-2 text-slate-400">
+                    (الحالي: <strong className="font-mono text-slate-700 dark:text-slate-300">{formatCurrency(currentDebtor.currentBalance, settings.currency)}</strong>)
+                  </span>
+                )}
               </p>
-            </div>
+            )}
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 dark:hover:bg-[#1a233a] rounded-lg transition-colors cursor-pointer"
+            type="button"
+            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-6 h-6" />
           </button>
         </div>
 
-        {/* Toggle Tabs: "تسجيل دين" vs "تسديد مبلغ" */}
-        <div className="p-4 bg-slate-50 dark:bg-[#0f1422] border-b border-slate-200 dark:border-[#27324c]">
-          <div className="grid grid-cols-2 gap-2 bg-slate-200 dark:bg-[#101524] p-1 rounded-xl border border-slate-300 dark:border-[#27324c]">
+        {/* Tab Toggle (دين / تسديد) */}
+        <div className="px-5 pt-4 sm:px-6">
+          <div className="grid grid-cols-2 p-1.5 bg-slate-100 dark:bg-[#182035] rounded-2xl">
             <button
               type="button"
-              onClick={() => setCurrentType('DEBT')}
-              className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              onClick={() => {
+                setCurrentType('DEBT');
+                setFormError(null);
+              }}
+              className={`py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
                 isDebt
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <PlusCircle className="w-4 h-4" />
-              <span>تسجيل دين</span>
+              <Plus className="w-4 h-4" />
+              <span>إضافة دين</span>
             </button>
 
             <button
               type="button"
-              onClick={() => setCurrentType('PAYMENT')}
-              className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              onClick={() => {
+                setCurrentType('PAYMENT');
+                setFormError(null);
+              }}
+              className={`py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
                 !isDebt
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <ArrowDownLeft className="w-4 h-4" />
-              <span>تسديد مبلغ</span>
+              <span>تسديد دفعة</span>
             </button>
           </div>
         </div>
 
-        {/* Form Body - Only Debtor, Price/Amount, Notes, Date */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4">
-          {/* 1. Select Debtor */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              اسم الزبون / المدين <span className="text-rose-500">*</span>
-            </label>
-            <select
-              id="trx-debtor-select"
-              value={debtorId}
-              onChange={(e) => setDebtorId(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#101524] border border-slate-300 dark:border-[#27324c] rounded-xl text-sm font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-            >
-              {allDebtors.map((d) => (
-                <option key={d.id} value={d.id} className="dark:bg-[#161c2d]">
-                  {d.name} {d.currentBalance > 0 ? `(عليه: ${formatCurrency(d.currentBalance, settings.currency)})` : '(تم التسديد)'}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Form Body: Exactly (المبلغ، الوصف، ملاحظة اختيارية) with Large Inputs */}
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5">
+          {formError && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-2xl text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
 
-          {/* 2. Price / Amount (السعر) */}
+          {/* Debtor Selector (if not locked to one debtor) */}
+          {allDebtors.length > 1 && !selectedDebtor && (
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
+                اختر الزبون
+              </label>
+              <select
+                id="trx-debtor-select"
+                value={debtorId}
+                onChange={(e) => {
+                  setDebtorId(e.target.value);
+                  setFormError(null);
+                }}
+                className="w-full h-12 px-4 bg-slate-50 dark:bg-[#182035] border border-slate-200 dark:border-slate-700 rounded-2xl text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden focus:border-blue-500 cursor-pointer"
+              >
+                {allDebtors.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} {d.phone ? `(${d.phone})` : ''} - عليه ({formatCurrency(d.currentBalance, settings.currency)})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* 1. المبلغ (Large Sized Input) */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              السعر / المبلغ ({settings.currency === 'د.ع' ? 'دينار عراقي' : (settings.currency || 'دينار عراقي')}) <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-100">
+                المبلغ <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-xs font-bold text-slate-400">
+                العملة: {settings.currency || 'دينار عراقي'}
+              </span>
+            </div>
+            
             <div className="relative">
               <input
                 id="trx-amount-input"
                 type="number"
+                inputMode="decimal"
                 step="any"
                 min="0.01"
                 placeholder="0"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setFormError(null);
+                }}
                 autoFocus
-                className="w-full pr-4 pl-28 py-3 bg-slate-50 dark:bg-[#101524] border border-slate-300 dark:border-[#27324c] rounded-xl text-xl font-black text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                className="w-full h-16 sm:h-18 pl-20 pr-5 bg-slate-50 dark:bg-[#182035] border-2 border-slate-200 dark:border-slate-700/80 rounded-2xl text-3xl sm:text-4xl font-black font-mono text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 text-left transition-all"
               />
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                {settings.currency === 'د.ع' ? 'دينار عراقي' : (settings.currency || 'دينار عراقي')}
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">
+                {settings.currency || 'د.ع'}
               </span>
             </div>
 
-            {/* Quick Settle All Button for Payments */}
-            {!isDebt && currentBal > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setAmount(currentBal.toString());
-                  setNotes('تسديد كامل الحساب نقداً');
-                }}
-                className="mt-2 text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-bold inline-flex items-center gap-1 cursor-pointer"
-              >
-                <span>تسديد كامل الحساب المتبقي ({formatCurrency(currentBal, settings.currency)})</span>
-              </button>
-            )}
+            {/* Quick Amount Chips */}
+            <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto pb-1">
+              {isDebt ? (
+                <>
+                  {[1000, 2000, 5000, 10000, 25000].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => addQuickAmount(val)}
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#1e2842] hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950/60 dark:hover:text-blue-300 text-slate-700 dark:text-slate-300 text-xs font-mono font-bold transition-colors cursor-pointer shrink-0"
+                    >
+                      +{val.toLocaleString()}
+                    </button>
+                  ))}
+                </>
+              ) : currentBal > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAmount(currentBal.toString());
+                    setDescription('تسديد كامل الحساب');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold hover:bg-emerald-100 transition-colors cursor-pointer"
+                >
+                  تسديد كامل الحساب ({formatCurrency(currentBal, settings.currency)})
+                </button>
+              ) : null}
+            </div>
           </div>
 
-          {/* 3. Notes Field (خانة الملاحظات - بدون اقتراحات) */}
+          {/* 2. الوصف (Large Sized Input) */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <StickyNote className="w-3.5 h-3.5 text-blue-500" />
-                <span>الملاحظات</span>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-100">
+                الوصف
               </label>
-              <span className="text-[10px] text-slate-400">اختياري</span>
+              <span className="text-xs text-slate-400">
+                ماذا أخذ الزبون؟
+              </span>
             </div>
-            <textarea
+
+            <input
+              id="trx-description-input"
+              type="text"
+              placeholder="مثال: مسواك، كارتات رصيد، حليب وبيض..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full h-14 sm:h-15 px-4 bg-slate-50 dark:bg-[#182035] border-2 border-slate-200 dark:border-slate-700/80 rounded-2xl text-base sm:text-lg font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:border-blue-500 transition-all"
+            />
+
+            {/* Quick Description suggestions */}
+            <div className="flex items-center gap-1.5 mt-2 overflow-x-auto pb-1">
+              {quickDescriptions.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => {
+                    setDescription(description ? `${description} + ${item}` : item);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-[#1a233a] hover:bg-slate-200 dark:hover:bg-[#232f4e] text-slate-600 dark:text-slate-300 text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. ملاحظة اختيارية (Large Sized Input) */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-200">
+                ملاحظة اختيارية
+              </label>
+              <span className="text-xs text-slate-400">
+                اختياري
+              </span>
+            </div>
+
+            <input
               id="trx-notes-input"
-              rows={3}
-              placeholder="اكتب أي ملاحظات هنا..."
+              type="text"
+              placeholder="أي ملاحظة أو تفاصيل إضافية..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#101524] border border-slate-300 dark:border-[#27324c] rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full h-12 sm:h-13 px-4 bg-slate-50 dark:bg-[#182035] border-2 border-slate-200 dark:border-slate-700/80 rounded-2xl text-sm sm:text-base font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:border-blue-500 transition-all"
             />
           </div>
 
-          {/* 4. Date Field (خانة التاريخ) */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-slate-500" />
-              <span>التاريخ والوقت</span>
+          {/* WhatsApp toggle if customer has phone */}
+          {currentDebtor?.phone && (
+            <label className="flex items-center justify-between p-3 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors">
+              <div className="flex items-center gap-2.5 text-xs sm:text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                <MessageCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>إرسال تفاصيل الدين إلى واتساب الزبون ({currentDebtor.phone})</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={sendWhatsApp}
+                onChange={(e) => setSendWhatsApp(e.target.checked)}
+                className="w-5 h-5 rounded-md text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+              />
             </label>
-            <input
-              id="trx-date-input"
-              type="datetime-local"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#101524] border border-slate-300 dark:border-[#27324c] rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {/* Live Balance Preview Box */}
-          {currentDebtor && (
-            <div className="p-3 bg-slate-50 dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#27324c] flex items-center justify-between text-xs">
-              <div>
-                <span className="text-slate-500 dark:text-slate-400">الرصيد الحالي: </span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {formatCurrency(currentBal, settings.currency)}
-                </span>
-              </div>
-              <div className="text-slate-400">➔</div>
-              <div>
-                <span className="text-slate-500 dark:text-slate-400">الرصيد بعد الحركة: </span>
-                <span className={`font-black ${isDebt ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                  {formatCurrency(projectedBal, settings.currency)}
-                </span>
-              </div>
-            </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="pt-2 flex items-center justify-end gap-2.5">
+          {/* Large Action Buttons */}
+          <div className="pt-2 flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 bg-slate-100 dark:bg-[#182137] hover:bg-slate-200 dark:hover:bg-[#202b46] text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              className="h-14 sm:h-15 px-6 rounded-2xl bg-slate-100 dark:bg-[#182035] hover:bg-slate-200 dark:hover:bg-[#202b46] text-slate-700 dark:text-slate-300 text-sm sm:text-base font-bold transition-colors cursor-pointer"
             >
               إلغاء
             </button>
             <button
               id="trx-submit-btn"
               type="submit"
-              className="flex-1 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              className={`flex-1 h-14 sm:h-15 px-6 rounded-2xl text-white text-base sm:text-lg font-black shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                isDebt
+                  ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/25'
+                  : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'
+              }`}
             >
-              <Check className="w-4 h-4" />
-              <span>حفظ ({isDebt ? 'تسجيل دين' : 'تسديد مبلغ'})</span>
+              <Check className="w-5 h-5 sm:w-6 sm:h-6" />
+              <span>{isDebt ? 'حفظ الدين' : 'حفظ التسديد'}</span>
             </button>
           </div>
         </form>
