@@ -23,6 +23,7 @@ import {
   Truck,
   Shield,
   Phone,
+  Mic,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -39,6 +40,7 @@ interface HeaderProps {
   onOpenAddDebtor: () => void;
   onOpenAddDebt: () => void;
   onOpenAddPayment: () => void;
+  onOpenVoiceModal?: () => void;
   onOpenSettings: () => void;
   onExportCSV: () => void;
   onLogin: () => void;
@@ -61,6 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAddDebtor,
   onOpenAddDebt,
   onOpenAddPayment,
+  onOpenVoiceModal,
   onOpenSettings,
   onExportCSV,
   onLogin,
@@ -148,6 +151,17 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Mobile Actions (Theme Toggle & Auth & Logout) */}
             <div className="flex items-center gap-2 lg:hidden">
+              {onOpenVoiceModal && (
+                <button
+                  type="button"
+                  onClick={onOpenVoiceModal}
+                  title="تسجيل صوتي ذكي للديون"
+                  className="p-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-xs cursor-pointer flex items-center justify-center animate-pulse"
+                >
+                  <Mic className="w-4 h-4 text-amber-300" />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onToggleTheme}
@@ -227,6 +241,20 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Quick Action Buttons & Controls */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Smart Voice Debt Recording */}
+            {onOpenVoiceModal && (
+              <button
+                id="btn-voice-recorder-header"
+                type="button"
+                onClick={onOpenVoiceModal}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black rounded-xl shadow-md shadow-purple-600/20 transition-all cursor-pointer"
+                title="تسجيل دين بواسطة الصوت والتعرف الصوتي الذكي"
+              >
+                <Mic className="w-4 h-4 text-amber-300" />
+                <span>تسجيل بالصوت 🎙️</span>
+              </button>
+            )}
+
             {/* Quick Add Debt (+ مواد) */}
             <button
               id="btn-quick-add-debt"

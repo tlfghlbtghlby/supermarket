@@ -19,6 +19,7 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Key,
 } from 'lucide-react';
 import {
   loginWithGoogle,
@@ -30,6 +31,8 @@ import {
 } from '../lib/firebase';
 import { syncStoreSettings } from '../services/firebaseSync';
 import { initialSettings } from '../data/initialData';
+import { saveAppUser, loadSettings, saveSettings } from '../utils/storage';
+import { AppUser } from '../types';
 
 interface LoginScreenProps {
   onLoginSuccess?: () => void;
@@ -158,15 +161,50 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
     }
   };
 
+  const handleDirectOwnerLogin = () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    const ownerUser: AppUser = {
+      id: 'usr-owner-g781011',
+      name: 'صاحب المحل',
+      phone: '07854668977',
+      email: 'example@gmail.com',
+      shopCode: 'G781011',
+      passwordCode: '123123',
+      role: 'OWNER',
+      isLoggedIn: true,
+    };
+    saveAppUser(ownerUser);
+    const currentSettings = loadSettings();
+    saveSettings({
+      ...currentSettings,
+      ownerName: 'صاحب المحل',
+      ownerEmail: 'example@gmail.com',
+      ownerPasswordCode: '123123',
+      shopCode: 'G781011',
+    });
+    setSuccessMsg('تم تسجيل الدخول بحساب صاحب المحل (G781011) بنجاح!');
+    setTimeout(() => {
+      onLoginSuccess?.();
+    }, 300);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const cleanId = identifier.trim();
+    let cleanId = identifier.trim();
     if (!cleanId) {
-      setErrorMsg('يرجى إدخال البريد الإلكتروني أو رقم الهاتف.');
+      setErrorMsg('يرجى إدخال البريد الإلكتروني أو رمز المحل أو رقم الهاتف.');
       return;
+    }
+
+    // Support entering the shop code G781011 as identifier
+    const isShopCode = cleanId.toUpperCase() === 'G781011';
+    const isExampleOwner = cleanId.toLowerCase() === 'example@gmail.com' || isShopCode;
+    if (isShopCode) {
+      cleanId = 'example@gmail.com';
     }
 
     if (mode === 'FORGOT') {
@@ -200,28 +238,80 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
 
     try {
       if (mode === 'LOGIN') {
-        await loginWithEmailOrPhone(cleanId, password);
-        onLoginSuccess?.();
+        try {
+          await loginWithEmailOrPhone(cleanId, password);
+          onLoginSuccess?.();
+          return;
+        } catch (authErr: any) {
+          // If this is the example owner account (example@gmail.com / 123123) and not yet registered in Firebase Auth,
+          // try creating it automatically in Firebase, or fallback locally!
+          if (isExampleOwner && password === '123123') {
+            try {
+              const regUser = await registerWithEmailOrPhone(
+                'example@gmail.com',
+                '123123',
+                'صاحب المحل'
+              );
+              if (regUser) {
+                const customSet = {
+                  ...initialSettings,
+                  ownerName: 'صاحب المحل',
+                  ownerEmail: 'example@gmail.com',
+                  ownerPasswordCode: '123123',
+                  shopCode: 'G781011',
+                };
+                await syncStoreSettings(customSet, regUser.uid).catch(() => {});
+                onLoginSuccess?.();
+                return;
+              }
+            } catch (regErr) {
+              console.warn('Firebase registration fallback to local owner user:', regErr);
+            }
+
+            // Reliable seamless login
+            handleDirectOwnerLogin();
+            return;
+          }
+
+          throw authErr;
+        }
       } else {
         // Register new account
-        const user = await registerWithEmailOrPhone(
-          cleanId,
-          password,
-          ownerName.trim() || undefined
-        );
+        const assignedShopCode = isExampleOwner
+          ? 'G781011'
+          : 'G' + Math.floor(100000 + Math.random() * 900000).toString();
 
-        if (user && (storeName.trim() || ownerName.trim())) {
-          const customSet = {
-            ...initialSettings,
-            storeName: storeName.trim() || 'دفتر ديون السوبرماركت',
-            ownerName: ownerName.trim() || '',
-            phone: cleanId.replace(/[^0-9+]/g, ''),
-          };
-          await syncStoreSettings(customSet, user.uid).catch(() => {});
+        try {
+          const user = await registerWithEmailOrPhone(
+            cleanId,
+            password,
+            ownerName.trim() || undefined
+          );
+
+          if (user) {
+            const customSet = {
+              ...initialSettings,
+              storeName: storeName.trim() || 'دفتر ديون السوبرماركت',
+              ownerName: ownerName.trim() || 'صاحب المحل',
+              ownerEmail: cleanId,
+              ownerPasswordCode: password,
+              shopCode: assignedShopCode,
+              phone: cleanId.replace(/[^0-9+]/g, ''),
+            };
+            await syncStoreSettings(customSet, user.uid).catch(() => {});
+          }
+
+          setSuccessMsg(`تم إنشاء الحساب بنجاح! كود المحل الخاص بك هو [${assignedShopCode}].`);
+          setTimeout(() => {
+            onLoginSuccess?.();
+          }, 600);
+        } catch (regErr: any) {
+          if (isExampleOwner && password === '123123') {
+            handleDirectOwnerLogin();
+            return;
+          }
+          throw regErr;
         }
-
-        setSuccessMsg('تم إنشاء الحساب بنجاح! جاري الدخول ومزامنة دفتر الديون...');
-        onLoginSuccess?.();
       }
     } catch (err: any) {
       setErrorMsg(mapAuthError(err));
@@ -329,6 +419,52 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
             <span className="bg-slate-800 px-3 text-xs text-slate-400 font-medium absolute">
               أو بالبريد الإلكتروني / رقم الهاتف
             </span>
+          </div>
+
+          {/* Quick Owner Account Demo Box */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-slate-800/80 border border-blue-500/40 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-black text-blue-300">
+                <Key className="w-3.5 h-3.5 text-amber-400" />
+                <span>حساب صاحب المحل المعتمد:</span>
+              </div>
+              <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-400/30 font-mono">
+                كود المحل: G781011
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono text-slate-300 bg-slate-900/70 p-2.5 rounded-lg border border-slate-700/60">
+              <div>
+                <span className="text-slate-400 font-sans block text-[10px] mb-0.5">البريد أو رمز المحل:</span>
+                <span className="text-blue-200 font-bold block truncate">example@gmail.com</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-sans block text-[10px] mb-0.5">الرمز (كلمة المرور):</span>
+                <span className="text-amber-300 font-bold block">123123</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIdentifier('example@gmail.com');
+                  setPassword('123123');
+                  setMode('LOGIN');
+                }}
+                className="flex-1 py-1.5 px-2 bg-slate-700/70 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <span>تعبئة الحقول</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDirectOwnerLogin}
+                className="flex-1 py-1.5 px-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-300" />
+                <span>دخول فوري</span>
+              </button>
+            </div>
           </div>
 
           {/* Mode Switcher Tabs */}
@@ -454,9 +590,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                البريد الإلكتروني أو رقم الهاتف
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300">
+                  البريد الإلكتروني، رمز المحل، أو رقم الهاتف
+                </label>
+                <span className="text-[10px] text-blue-400 font-mono">
+                  مثال: G781011 أو example@gmail.com
+                </span>
+              </div>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
                 <input
@@ -464,7 +605,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                   required
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="مثال: 07701234567 أو store@gmail.com"
+                  placeholder="example@gmail.com أو كود المحل G781011 أو الهاتف"
                   dir="ltr"
                   className="w-full pl-3 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-hidden focus:border-blue-500 placeholder:text-slate-500 text-left font-mono"
                 />

@@ -63,6 +63,9 @@ service cloud.firestore {
         && data.userId is string && isOwner(data.userId)
         && data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 150
         && (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 100))
+        && (!('ownerEmail' in data) || (data.ownerEmail is string && data.ownerEmail.size() <= 200))
+        && (!('ownerPasswordCode' in data) || (data.ownerPasswordCode is string && data.ownerPasswordCode.size() <= 100))
+        && (!('shopCode' in data) || (data.shopCode is string && data.shopCode.size() <= 50))
         && (!('phone' in data) || (data.phone is string && data.phone.size() <= 50))
         && (!('address' in data) || (data.address is string && data.address.size() <= 300))
         && data.currency is string && data.currency.size() <= 20
@@ -76,6 +79,13 @@ service cloud.firestore {
         && (!('metaPhoneNumberId' in data) || (data.metaPhoneNumberId is string && data.metaPhoneNumberId.size() <= 100))
         && (!('metaAccessToken' in data) || (data.metaAccessToken is string && data.metaAccessToken.size() <= 500))
         && (!('metaBusinessAccountId' in data) || (data.metaBusinessAccountId is string && data.metaBusinessAccountId.size() <= 100))
+        && (!('telegramBotToken' in data) || (data.telegramBotToken is string && data.telegramBotToken.size() <= 200))
+        && (!('telegramBotUsername' in data) || (data.telegramBotUsername is string && data.telegramBotUsername.size() <= 100))
+        && (!('telegramChatId' in data) || (data.telegramChatId is string && data.telegramChatId.size() <= 100))
+        && (!('telegramOwnerName' in data) || (data.telegramOwnerName is string && data.telegramOwnerName.size() <= 100))
+        && (!('enableTelegramAlerts' in data) || data.enableTelegramAlerts is bool)
+        && (!('enableDailyMidnightReport' in data) || data.enableDailyMidnightReport is bool)
+        && (!('lastDailyMidnightReportDate' in data) || (data.lastDailyMidnightReportDate is string && data.lastDailyMidnightReportDate.size() <= 50))
         && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 

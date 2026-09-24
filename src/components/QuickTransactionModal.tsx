@@ -1,7 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { DebtorWithStats, TransactionType, PaymentMethod, StoreSettings } from '../types';
 import { formatCurrency, generateTransactionWhatsAppUrl } from '../utils/formatters';
-import { X, Check, MessageCircle, AlertCircle, Plus, ArrowDownLeft } from 'lucide-react';
+import { speechRecognizer, SpeechRecognitionResultItem } from '../utils/speechRecognition';
+import { parseArabicVoiceAmount } from '../utils/arabicVoiceParser';
+import {
+  X,
+  Check,
+  MessageCircle,
+  AlertCircle,
+  Plus,
+  ArrowDownLeft,
+  Mic,
+  Loader2,
+  Sparkles,
+} from 'lucide-react';
 
 interface QuickTransactionModalProps {
   isOpen: boolean;
@@ -10,6 +22,7 @@ interface QuickTransactionModalProps {
   allDebtors: DebtorWithStats[];
   settings: StoreSettings;
   onClose: () => void;
+  onOpenVoiceModal?: () => void;
   onSubmit: (data: {
     debtorId: string;
     type: TransactionType;
@@ -30,6 +43,7 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
   allDebtors,
   settings,
   onClose,
+  onOpenVoiceModal,
   onSubmit,
 }) => {
   const [currentType, setCurrentType] = useState<TransactionType>(initialType);
@@ -40,6 +54,9 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
   const [sendWhatsApp, setSendWhatsApp] = useState<boolean>(true);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Active voice field listening indicator: 'AMOUNT' | 'DESCRIPTION' | 'NOTES' | null
+  const [activeVoiceField, setActiveVoiceField] = useState<'AMOUNT' | 'DESCRIPTION' | 'NOTES' | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       setCurrentType(initialType);
@@ -49,7 +66,15 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
       setNotes('');
       setSendWhatsApp(true);
       setFormError(null);
+      setActiveVoiceField(null);
+    } else {
+      speechRecognizer.stop();
+      setActiveVoiceField(null);
     }
+
+    return () => {
+      speechRecognizer.stop();
+    };
   }, [isOpen, selectedDebtor, allDebtors, initialType]);
 
   if (!isOpen) return null;
@@ -64,6 +89,50 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
     const currentVal = parseFloat(amount) || 0;
     setAmount((currentVal + val).toString());
     setFormError(null);
+  };
+
+  // Voice dictation for specific field
+  const toggleVoiceField = (field: 'AMOUNT' | 'DESCRIPTION' | 'NOTES') => {
+    if (activeVoiceField === field) {
+      speechRecognizer.stop();
+      setActiveVoiceField(null);
+      return;
+    }
+
+    setActiveVoiceField(field);
+    speechRecognizer.start({
+      onStart: () => {
+        setActiveVoiceField(field);
+      },
+      onResult: (res: SpeechRecognitionResultItem) => {
+        const text = res.transcript;
+        if (field === 'AMOUNT') {
+          const parsed = parseArabicVoiceAmount(text);
+          if (parsed && parsed > 0) {
+            setAmount(parsed.toString());
+            setFormError(null);
+          }
+        } else if (field === 'DESCRIPTION') {
+          setDescription(text);
+        } else if (field === 'NOTES') {
+          setNotes(text);
+        }
+
+        if (res.isFinal) {
+          setTimeout(() => {
+            speechRecognizer.stop();
+            setActiveVoiceField(null);
+          }, 1200);
+        }
+      },
+      onEnd: () => {
+        setActiveVoiceField(null);
+      },
+      onError: (err) => {
+        console.warn('Voice input error:', err);
+        setActiveVoiceField(null);
+      },
+    });
   };
 
   const quickDescriptions = ['مسواك', 'كارتات رصيد', 'ألبان واجبان', 'لحوم ودجاج', 'مواد تنظيف'];
@@ -107,6 +176,8 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
       }
     }
 
+    speechRecognizer.stop();
+    setActiveVoiceField(null);
     onSubmit({
       debtorId,
       type: currentType,
@@ -124,7 +195,7 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
     <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-900/60 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4" dir="rtl">
       <div className="bg-white dark:bg-[#121727] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-150">
         
-        {/* Header: Title & Customer Name */}
+        {/* Header: Title & Voice Quick Option */}
         <div className="px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div className="space-y-0.5">
             <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
@@ -145,13 +216,37 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
               </p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            type="button"
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-          >
-            <X className="w-6 h-6" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Quick full-voice dictation button */}
+            {onOpenVoiceModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  speechRecognizer.stop();
+                  setActiveVoiceField(null);
+                  onOpenVoiceModal();
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                title="إملاء صوتي كامل للعملية"
+              >
+                <Mic className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span className="hidden sm:inline">تسجيل بالصوت</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                speechRecognizer.stop();
+                setActiveVoiceField(null);
+                onClose();
+              }}
+              type="button"
+              className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Toggle (دين / تسديد) */}
@@ -191,7 +286,7 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
           </div>
         </div>
 
-        {/* Form Body: Exactly (المبلغ، الوصف، ملاحظة اختيارية) with Large Inputs */}
+        {/* Form Body: Exactly (المبلغ، الوصف، ملاحظة اختيارية) with Large Inputs + Voice Mic */}
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5">
           {formError && (
             <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-2xl text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-2">
@@ -224,12 +319,28 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
             </div>
           )}
 
-          {/* 1. المبلغ (Large Sized Input) */}
+          {/* 1. المبلغ (Large Sized Input with Voice Mic) */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-100">
-                المبلغ <span className="text-rose-500">*</span>
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-100">
+                  المبلغ <span className="text-rose-500">*</span>
+                </label>
+                {/* Voice button for Amount */}
+                <button
+                  type="button"
+                  onClick={() => toggleVoiceField('AMOUNT')}
+                  className={`p-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                    activeVoiceField === 'AMOUNT'
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'bg-slate-100 dark:bg-[#1e2842] text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                  }`}
+                  title="نطق المبلغ صوتياً (مثلاً: خمسة عشر ألف)"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span className="text-[11px]">{activeVoiceField === 'AMOUNT' ? 'جاري الاستماع...' : 'نطق المبلغ'}</span>
+                </button>
+              </div>
               <span className="text-xs font-bold text-slate-400">
                 العملة: {settings.currency || 'دينار عراقي'}
               </span>
@@ -249,7 +360,9 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
                   setFormError(null);
                 }}
                 autoFocus
-                className="w-full h-16 sm:h-18 pl-20 pr-5 bg-slate-50 dark:bg-[#182035] border-2 border-slate-200 dark:border-slate-700/80 rounded-2xl text-3xl sm:text-4xl font-black font-mono text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 text-left transition-all"
+                className={`w-full h-16 sm:h-18 pl-20 pr-5 bg-slate-50 dark:bg-[#182035] border-2 rounded-2xl text-3xl sm:text-4xl font-black font-mono text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 text-left transition-all ${
+                  activeVoiceField === 'AMOUNT' ? 'border-rose-500 ring-2 ring-rose-400/30' : 'border-slate-200 dark:border-slate-700/80'
+                }`}
               />
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">
                 {settings.currency || 'د.ع'}
@@ -286,25 +399,45 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
             </div>
           </div>
 
-          {/* 2. الوصف (Large Sized Input) */}
+          {/* 2. الوصف (Large Sized Input with Voice Mic) */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-100">
-                الوصف
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-100">
+                  الوصف
+                </label>
+                {/* Voice button for Description */}
+                <button
+                  type="button"
+                  onClick={() => toggleVoiceField('DESCRIPTION')}
+                  className={`p-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                    activeVoiceField === 'DESCRIPTION'
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'bg-slate-100 dark:bg-[#1e2842] text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                  }`}
+                  title="إملاء الوصف صوتياً"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span className="text-[11px]">{activeVoiceField === 'DESCRIPTION' ? 'جاري الاستماع...' : 'إملاء بالصوت'}</span>
+                </button>
+              </div>
               <span className="text-xs text-slate-400">
                 ماذا أخذ الزبون؟
               </span>
             </div>
 
-            <input
-              id="trx-description-input"
-              type="text"
-              placeholder="مثال: مسواك، كارتات رصيد، حليب وبيض..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full h-14 sm:h-15 px-4 bg-slate-50 dark:bg-[#182035] border-2 border-slate-200 dark:border-slate-700/80 rounded-2xl text-base sm:text-lg font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:border-blue-500 transition-all"
-            />
+            <div className="relative">
+              <input
+                id="trx-description-input"
+                type="text"
+                placeholder="مثال: مسواك، كارتات رصيد، حليب وبيض..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className={`w-full h-14 sm:h-15 px-4 bg-slate-50 dark:bg-[#182035] border-2 rounded-2xl text-base sm:text-lg font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:border-blue-500 transition-all ${
+                  activeVoiceField === 'DESCRIPTION' ? 'border-rose-500 ring-2 ring-rose-400/30' : 'border-slate-200 dark:border-slate-700/80'
+                }`}
+              />
+            </div>
 
             {/* Quick Description suggestions */}
             <div className="flex items-center gap-1.5 mt-2 overflow-x-auto pb-1">
@@ -323,12 +456,27 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
             </div>
           </div>
 
-          {/* 3. ملاحظة اختيارية (Large Sized Input) */}
+          {/* 3. ملاحظة اختيارية (Large Sized Input with Voice Mic) */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-200">
-                ملاحظة اختيارية
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-200">
+                  ملاحظة اختيارية
+                </label>
+                <button
+                  type="button"
+                  onClick={() => toggleVoiceField('NOTES')}
+                  className={`p-1 rounded-md text-xs font-medium flex items-center gap-1 transition-all cursor-pointer ${
+                    activeVoiceField === 'NOTES'
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                  }`}
+                  title="إملاء ملاحظة صوتياً"
+                >
+                  <Mic className="w-3 h-3" />
+                  <span className="text-[10px]">{activeVoiceField === 'NOTES' ? 'استماع...' : 'صوت'}</span>
+                </button>
+              </div>
               <span className="text-xs text-slate-400">
                 اختياري
               </span>

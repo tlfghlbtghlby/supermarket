@@ -2,8 +2,11 @@ import { Debtor, Transaction, StoreSettings, Supplier, SupplierTransaction } fro
 
 export const initialSettings: StoreSettings = {
   storeName: 'دفتر ديون السوبرماركت',
-  ownerName: '',
-  phone: '',
+  ownerName: 'صاحب المحل',
+  ownerEmail: 'example@gmail.com',
+  ownerPasswordCode: '123123',
+  shopCode: 'G781011',
+  phone: '07854668977',
   address: '',
   currency: 'دينار عراقي',
   customCurrencyName: 'د.ع',
@@ -12,6 +15,12 @@ export const initialSettings: StoreSettings = {
   storeWhatsAppPhone: '',
   themeMode: 'dark',
   strictCreditLimit: false,
+  telegramBotToken: '8804502479:AAEpAGxY53toTCSoIKiMdMs9yGR8arahR-Q',
+  telegramBotUsername: 'deptstbot',
+  telegramChatId: '',
+  telegramOwnerName: '',
+  enableTelegramAlerts: true,
+  enableDailyMidnightReport: true,
 };
 
 export const initialSuppliers: Supplier[] = [];

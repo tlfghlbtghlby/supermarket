@@ -41,12 +41,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
+    const cleanInput = phone.trim();
+    const isOwnerCode = cleanInput.toUpperCase() === 'G781011';
+    const isOwnerEmail = cleanInput.toLowerCase() === 'example@gmail.com';
+    const isOwnerPhone = cleanInput.endsWith('8977');
+    const isOwner = isOwnerCode || isOwnerEmail || isOwnerPhone;
+
     // Authenticate user
     const user: AppUser = {
       id: 'usr-' + Date.now(),
-      name: phone.trim().endsWith('8977') ? 'أبو أحمد (صاحب المحل)' : 'مستخدم (' + phone.trim() + ')',
-      phone: phone.trim(),
-      role: phone.trim().endsWith('8977') ? 'OWNER' : 'EMPLOYEE',
+      name: isOwner ? 'صاحب المحل (أبو أحمد)' : 'مستخدم (' + cleanInput + ')',
+      phone: isOwner ? '07854668977' : cleanInput,
+      email: isOwner ? 'example@gmail.com' : undefined,
+      shopCode: isOwner ? 'G781011' : undefined,
+      passwordCode: password.trim(),
+      role: isOwner ? 'OWNER' : 'EMPLOYEE',
       isLoggedIn: true,
     };
     onLogin(user);

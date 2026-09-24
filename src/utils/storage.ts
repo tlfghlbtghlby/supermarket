@@ -108,6 +108,15 @@ export function loadSettings(): StoreSettings {
     const mergedSettings: StoreSettings = { 
       ...initialSettings, 
       ...parsed, 
+      ownerEmail: parsed.ownerEmail || initialSettings.ownerEmail || 'example@gmail.com',
+      ownerPasswordCode: parsed.ownerPasswordCode || initialSettings.ownerPasswordCode || '123123',
+      shopCode: parsed.shopCode || initialSettings.shopCode || 'G781011',
+      telegramBotToken: parsed.telegramBotToken || '8804502479:AAEpAGxY53toTCSoIKiMdMs9yGR8arahR-Q',
+      telegramBotUsername: parsed.telegramBotUsername || 'deptstbot',
+      telegramChatId: parsed.telegramChatId || '',
+      telegramOwnerName: parsed.telegramOwnerName || '',
+      enableTelegramAlerts: parsed.enableTelegramAlerts ?? true,
+      enableDailyMidnightReport: parsed.enableDailyMidnightReport ?? true,
       currency: resolvedCurrency,
       customCurrencyName: 'د.ع'
     };

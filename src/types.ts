@@ -74,6 +74,9 @@ export interface SupplierWithStats extends Supplier {
 export interface StoreSettings {
   storeName: string;
   ownerName: string;
+  ownerEmail?: string; // بريد صاحب المحل (مثال: example@gmail.com)
+  ownerPasswordCode?: string; // رمز كلمة المرور (الرمز: 123123)
+  shopCode?: string; // رمز صاحب المحل / كود المتجر (رمزه هو: G781011)
   phone: string;
   address: string;
   currency: string;
@@ -88,12 +91,23 @@ export interface StoreSettings {
   metaPhoneNumberId?: string;
   metaAccessToken?: string;
   metaBusinessAccountId?: string;
+  // إعدادات وتكامل بوت تليجرام (Telegram Bot)
+  telegramBotToken?: string; // توكن البوت: 8804502479:AAEpAGxY53toTCSoIKiMdMs9yGR8arahR-Q
+  telegramBotUsername?: string; // يوزرنيم البوت: deptstbot
+  telegramChatId?: string; // معرف محادثة تليجرام لصاحب المحل
+  telegramOwnerName?: string; // اسم صاحب المحل على تليجرام
+  enableTelegramAlerts?: boolean; // إرسال إشعار فوري بكل حركة دين
+  enableDailyMidnightReport?: boolean; // رفع وإرسال نسخة من الدين يومياً الساعة 12:00 صباحاً
+  lastDailyMidnightReportDate?: string; // تاريخ آخر تقرير يومي
 }
 
 export interface AppUser {
   id: string;
   phone: string;
   name: string;
+  email?: string;
+  shopCode?: string;
+  passwordCode?: string;
   role?: string;
   storeName?: string;
   isLoggedIn: boolean;

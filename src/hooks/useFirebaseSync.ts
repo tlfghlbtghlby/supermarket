@@ -140,13 +140,23 @@ export function useFirebaseSync() {
         user.uid,
         (cloudSettings) => {
           if (cloudSettings && cloudSettings.storeName) {
-            setSettings(cloudSettings);
-            saveSettings(cloudSettings);
+            const mergedSettings: StoreSettings = {
+              ...initialSettings,
+              ...cloudSettings,
+              ownerEmail: cloudSettings.ownerEmail || initialSettings.ownerEmail || 'example@gmail.com',
+              ownerPasswordCode: cloudSettings.ownerPasswordCode || initialSettings.ownerPasswordCode || '123123',
+              shopCode: cloudSettings.shopCode || initialSettings.shopCode || 'G781011',
+            };
+            setSettings(mergedSettings);
+            saveSettings(mergedSettings);
           } else {
             // First time login - initialize settings with user's name if available
             const defaultSet: StoreSettings = {
               ...initialSettings,
-              ownerName: user.displayName || '',
+              ownerName: user.displayName || 'صاحب المحل',
+              ownerEmail: user.email || 'example@gmail.com',
+              ownerPasswordCode: '123123',
+              shopCode: 'G781011',
               storeName: user.displayName ? `سوبرماركت ${user.displayName}` : 'دفتر ديون السوبرماركت',
             };
             syncStoreSettings(defaultSet, user.uid).catch(() => {});

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Debtor,
   StoreSettings,
@@ -22,6 +22,12 @@ import {
 } from './utils/formatters';
 import { sendMetaCloudMessage } from './services/whatsappBot';
 import {
+  DEFAULT_TELEGRAM_BOT_TOKEN,
+  checkAndLinkTelegramOwner,
+  sendTelegramDebtAlert,
+  sendTelegramDailyBackupReport,
+} from './services/telegramBot';
+import {
   loadSuppliers,
   saveSuppliers,
   loadSupplierTransactions,
@@ -36,6 +42,7 @@ import { DebtorList } from './components/DebtorList';
 import { RecentTransactionsList } from './components/RecentTransactionsList';
 import { DebtorDetailModal } from './components/DebtorDetailModal';
 import { QuickTransactionModal } from './components/QuickTransactionModal';
+import { VoiceTransactionModal } from './components/VoiceTransactionModal';
 import { AddDebtorModal } from './components/AddDebtorModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PrintStatement } from './components/PrintStatement';
@@ -58,6 +65,7 @@ import {
   Copy,
   Check,
   LogOut,
+  Mic,
 } from 'lucide-react';
 
 interface WhatsAppAlertPrompt {
@@ -121,6 +129,7 @@ export default function App() {
   const [isQuickTxOpen, setIsQuickTxOpen] = useState(false);
   const [quickTxType, setQuickTxType] = useState<TransactionType>('DEBT');
   const [quickTxTargetDebtor, setQuickTxTargetDebtor] = useState<DebtorWithStats | null>(null);
+  const [isVoiceTxOpen, setIsVoiceTxOpen] = useState(false);
 
   const [activeDebtorId, setActiveDebtorId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -191,6 +200,104 @@ export default function App() {
     return list;
   }, [debtorsWithStats, searchQuery, currentFilter, currentSort]);
 
+  // 1. فحص والتعرف التلقائي على حساب صاحب المحل عند إرسال الرمز للبوت
+  useEffect(() => {
+    if (settings.telegramChatId || !settings.shopCode) return;
+
+    const checkLinkInterval = async () => {
+      try {
+        const res = await checkAndLinkTelegramOwner(
+          settings.shopCode || 'G781011',
+          settings.storeName,
+          settings.telegramBotToken || DEFAULT_TELEGRAM_BOT_TOKEN
+        );
+        if (res.success && res.chatId) {
+          saveStoreSettings({
+            ...settings,
+            telegramChatId: res.chatId,
+            telegramOwnerName: res.ownerName || '',
+          });
+          showToast(`🎉 تم ربط حساب تليجرام لصاحب المحل (${res.ownerName || ''}) بنجاح!`);
+        }
+      } catch (err) {
+        console.warn('Auto telegram link check notice:', err);
+      }
+    };
+
+    checkLinkInterval();
+    const interval = setInterval(checkLinkInterval, 25000);
+    return () => clearInterval(interval);
+  }, [settings.telegramChatId, settings.shopCode, settings.storeName, settings.telegramBotToken, saveStoreSettings]);
+
+  // 2. رفع نسخة وتقرير الديون يومياً الساعة 12:00 صباحاً لصاحب المحل على تليجرام
+  useEffect(() => {
+    if (!settings.telegramChatId || !settings.enableDailyMidnightReport) return;
+
+    const checkAndRunMidnightReport = async () => {
+      const now = new Date();
+      const todayDateKey = now.toISOString().slice(0, 10);
+
+      // إذا تم الإرسال مسبقاً لهذا اليوم، نتخطى
+      if (settings.lastDailyMidnightReportDate === todayDateKey) return;
+
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      // نافذة منتصف الليل (12:00 ص إلى 12:05 ص)
+      if (currentHour === 0 && currentMinute <= 5) {
+        try {
+          const res = await sendTelegramDailyBackupReport(debtors, transactions, settings);
+          if (res.success) {
+            saveStoreSettings({
+              ...settings,
+              lastDailyMidnightReportDate: todayDateKey,
+            });
+            showToast('🌙 تم رفع وإرسال التقرير اليومي ونسخة الديون إلى تليجرام (الساعة 12:00 ص).');
+          }
+        } catch (e) {
+          console.error('Midnight backup trigger error:', e);
+        }
+      }
+    };
+
+    // حساب التوقيت الدقيق حتى الساعة 12:00 صباحاً التالية
+    const now = new Date();
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+    const msUntilMidnight = Math.max(1000, nextMidnight.getTime() - now.getTime());
+
+    const midnightTimer = setTimeout(async () => {
+      if (settings.telegramChatId && settings.enableDailyMidnightReport) {
+        const todayKey = new Date().toISOString().slice(0, 10);
+        try {
+          const res = await sendTelegramDailyBackupReport(debtors, transactions, settings);
+          if (res.success) {
+            saveStoreSettings({
+              ...settings,
+              lastDailyMidnightReportDate: todayKey,
+            });
+            showToast('🌙 تم رفع وإرسال التقرير اليومي للديون إلى تليجرام (الساعة 12:00 ص).');
+          }
+        } catch (err) {
+          console.error('Scheduled midnight report error:', err);
+        }
+      }
+    }, msUntilMidnight);
+
+    const checkInterval = setInterval(checkAndRunMidnightReport, 60000);
+
+    return () => {
+      clearTimeout(midnightTimer);
+      clearInterval(checkInterval);
+    };
+  }, [
+    settings.telegramChatId,
+    settings.enableDailyMidnightReport,
+    settings.lastDailyMidnightReportDate,
+    debtors,
+    transactions,
+    saveStoreSettings,
+  ]);
+
   // Currently opened debtor in detail modal
   const activeDebtorDetail = useMemo(() => {
     if (!activeDebtorId) return null;
@@ -240,6 +347,7 @@ export default function App() {
     paymentMethod?: PaymentMethod;
     invoiceNumber?: string;
     date: string;
+    autoOpenWhatsApp?: boolean;
   }) => {
     const targetDebtor = debtorsWithStats.find((d) => d.id === data.debtorId);
     const debtorName = targetDebtor?.name || 'الزبون';
@@ -271,7 +379,7 @@ export default function App() {
       }
     }
 
-    await addTransaction(data);
+    const newTx = await addTransaction(data);
 
     if (data.type === 'DEBT') {
       showToast(
@@ -281,6 +389,23 @@ export default function App() {
       showToast(
         `تم قبض وتسديد دفعة ${formatCurrency(data.amount, settings.currency)} من "${debtorName}".`
       );
+    }
+
+    // إرسال إشعار فوري لصاحب المحل على تليجرام عند تسجيل أي دين أو تسديد
+    if (settings.enableTelegramAlerts && settings.telegramChatId) {
+      sendTelegramDebtAlert(
+        {
+          ...(newTx || data),
+          balanceAfter: newBalance,
+        },
+        targetDebtor || {
+          id: data.debtorId,
+          name: debtorName,
+          phone: '',
+          createdAt: new Date().toISOString(),
+        },
+        settings
+      ).catch((err) => console.warn('Telegram debt alert error:', err));
     }
 
     // Trigger WhatsApp notification if debtor has phone number
@@ -586,6 +711,7 @@ export default function App() {
           setQuickTxTargetDebtor(null);
           setIsQuickTxOpen(true);
         }}
+        onOpenVoiceModal={() => setIsVoiceTxOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onExportCSV={handleExportCSV}
         onLogin={handleLogin}
@@ -958,8 +1084,49 @@ export default function App() {
           setIsQuickTxOpen(false);
           setQuickTxTargetDebtor(null);
         }}
+        onOpenVoiceModal={() => {
+          setIsQuickTxOpen(false);
+          setIsVoiceTxOpen(true);
+        }}
         onSubmit={handleAddTransaction}
       />
+
+      {/* Voice Transaction Modal (Smart Speech Recognition & Recording) */}
+      <VoiceTransactionModal
+        isOpen={isVoiceTxOpen}
+        allDebtors={debtorsWithStats}
+        settings={settings}
+        onClose={() => setIsVoiceTxOpen(false)}
+        onSaveTransaction={(data) => {
+          handleAddTransaction({
+            debtorId: data.debtorId,
+            type: data.type,
+            amount: data.amount,
+            description: data.description,
+            notes: data.notes,
+            date: new Date().toISOString(),
+            autoOpenWhatsApp: data.autoOpenWhatsApp,
+          });
+        }}
+        onOpenInStandardModal={(data) => {
+          const found = debtorsWithStats.find((d) => d.id === data.debtorId) || null;
+          setQuickTxTargetDebtor(found);
+          setQuickTxType(data.type);
+          setIsVoiceTxOpen(false);
+          setIsQuickTxOpen(true);
+        }}
+      />
+
+      {/* Mobile Floating Action Button for Instant Voice Debt Recording */}
+      <button
+        id="fab-mobile-voice-btn"
+        type="button"
+        onClick={() => setIsVoiceTxOpen(true)}
+        className="lg:hidden fixed bottom-6 left-6 z-40 w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-xl shadow-purple-600/35 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+        title="تسجيل دين بواسطة الصوت"
+      >
+        <Mic className="w-6 h-6 text-amber-300" />
+      </button>
 
       {/* Printable Statement Modal */}
       {activePrintDebtor && (
@@ -975,6 +1142,8 @@ export default function App() {
       <SettingsModal
         isOpen={isSettingsOpen}
         settings={settings}
+        debtors={debtors}
+        transactions={transactions}
         user={user}
         appUser={appUser}
         isOnline={isOnline}
