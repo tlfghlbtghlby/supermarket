@@ -33,6 +33,7 @@ import {
   saveSettings,
   clearAllLocalStoreData,
 } from '../utils/storage';
+import { generateUniqueAccountCode } from '../utils/accountCode';
 
 export function useFirebaseSync() {
   const [user, setUser] = useState<User | null>(null);
@@ -140,26 +141,39 @@ export function useFirebaseSync() {
         user.uid,
         (cloudSettings) => {
           if (cloudSettings && cloudSettings.storeName) {
+            const userUniqueCode =
+              cloudSettings.shopCode && cloudSettings.shopCode !== 'G781011'
+                ? cloudSettings.shopCode
+                : generateUniqueAccountCode(user.uid);
+
             const mergedSettings: StoreSettings = {
               ...initialSettings,
               ...cloudSettings,
-              ownerEmail: cloudSettings.ownerEmail || initialSettings.ownerEmail || 'example@gmail.com',
-              ownerPasswordCode: cloudSettings.ownerPasswordCode || initialSettings.ownerPasswordCode || '123123',
-              shopCode: cloudSettings.shopCode || initialSettings.shopCode || 'G781011',
+              ownerEmail: cloudSettings.ownerEmail || user.email || initialSettings.ownerEmail || 'example@gmail.com',
+              ownerPasswordCode: cloudSettings.ownerPasswordCode || '123123',
+              shopCode: userUniqueCode,
             };
             setSettings(mergedSettings);
             saveSettings(mergedSettings);
+
+            // Persist the unique code to Firestore if it wasn't there or was the legacy default
+            if (!cloudSettings.shopCode || cloudSettings.shopCode === 'G781011') {
+              syncStoreSettings(mergedSettings, user.uid).catch(() => {});
+            }
           } else {
-            // First time login - initialize settings with user's name if available
+            // First time login - initialize settings with user's unique code
+            const userUniqueCode = generateUniqueAccountCode(user.uid);
             const defaultSet: StoreSettings = {
               ...initialSettings,
               ownerName: user.displayName || 'صاحب المحل',
               ownerEmail: user.email || 'example@gmail.com',
               ownerPasswordCode: '123123',
-              shopCode: 'G781011',
+              shopCode: userUniqueCode,
               storeName: user.displayName ? `سوبرماركت ${user.displayName}` : 'دفتر ديون السوبرماركت',
             };
             syncStoreSettings(defaultSet, user.uid).catch(() => {});
+            setSettings(defaultSet);
+            saveSettings(defaultSet);
           }
           setLastSyncedAt(new Date());
           setIsSyncing(false);

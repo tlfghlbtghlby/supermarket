@@ -1,11 +1,12 @@
 import { Debtor, Transaction, StoreSettings, Supplier, SupplierTransaction } from '../types';
+import { generateUniqueAccountCode } from '../utils/accountCode';
 
 export const initialSettings: StoreSettings = {
   storeName: 'دفتر ديون السوبرماركت',
   ownerName: 'صاحب المحل',
   ownerEmail: 'example@gmail.com',
   ownerPasswordCode: '123123',
-  shopCode: 'G781011',
+  shopCode: generateUniqueAccountCode(),
   phone: '07854668977',
   address: '',
   currency: 'دينار عراقي',

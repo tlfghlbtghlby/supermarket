@@ -138,18 +138,48 @@ export async function testFirestoreConnection(): Promise<boolean> {
   }
 }
 
+export function isAndroidWebView(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isAndroid = /Android/i.test(ua);
+  return (
+    (window as any).Android !== undefined ||
+    /wv|WebView/i.test(ua) ||
+    (isAndroid && /Version\/[0-9.]+/i.test(ua)) ||
+    window.location.protocol === 'file:'
+  );
+}
+
 export async function loginWithGoogle() {
+  // If running inside Android WebView / APK, web OAuth popup/redirects fail
+  // with "missing initial state" or "disallowed_useragent" due to storage partitioning.
+  if (isAndroidWebView()) {
+    const error = new Error('APK_WEBVIEW_GOOGLE_UNSUPPORTED');
+    (error as any).code = 'auth/apk-webview-unsupported';
+    throw error;
+  }
+
   try {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
   } catch (error: any) {
-    if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
-      // User tapped outside or closed the popup; handle gracefully without console.error
+    if (
+      error?.code === 'auth/popup-closed-by-user' ||
+      error?.code === 'auth/cancelled-popup-request'
+    ) {
+      // User closed the popup; handle gracefully
       console.warn('Google sign-in popup closed by user.');
       return null;
     }
     console.error('Google popup login error:', error);
+
+    // If popup is blocked by browser, only try redirect if NOT in a webview / partitioned storage
     if (error?.code === 'auth/popup-blocked') {
+      if (isAndroidWebView()) {
+        const apkError = new Error('APK_WEBVIEW_GOOGLE_UNSUPPORTED');
+        (apkError as any).code = 'auth/apk-webview-unsupported';
+        throw apkError;
+      }
       try {
         await signInWithRedirect(auth, googleProvider);
         return null;

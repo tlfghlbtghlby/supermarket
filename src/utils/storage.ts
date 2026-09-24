@@ -1,5 +1,6 @@
 import { Debtor, Transaction, StoreSettings, Supplier, SupplierTransaction, AppUser } from '../types';
 import { initialDebtors, initialTransactions, initialSettings, initialSuppliers, initialSupplierTransactions } from '../data/initialData';
+import { generateUniqueAccountCode } from './accountCode';
 
 const DEBTORS_KEY = 'supermarket_debtors_v1';
 const TRANSACTIONS_KEY = 'supermarket_transactions_v1';
@@ -105,12 +106,17 @@ export function loadSettings(): StoreSettings {
       ? parsed.currency 
       : 'دينار عراقي';
     
+    const userShopCode =
+      parsed.shopCode && parsed.shopCode !== 'G781011'
+        ? parsed.shopCode
+        : generateUniqueAccountCode(parsed.ownerEmail || parsed.phone || undefined);
+
     const mergedSettings: StoreSettings = { 
       ...initialSettings, 
       ...parsed, 
       ownerEmail: parsed.ownerEmail || initialSettings.ownerEmail || 'example@gmail.com',
       ownerPasswordCode: parsed.ownerPasswordCode || initialSettings.ownerPasswordCode || '123123',
-      shopCode: parsed.shopCode || initialSettings.shopCode || 'G781011',
+      shopCode: userShopCode,
       telegramBotToken: parsed.telegramBotToken || '8804502479:AAEpAGxY53toTCSoIKiMdMs9yGR8arahR-Q',
       telegramBotUsername: parsed.telegramBotUsername || 'deptstbot',
       telegramChatId: parsed.telegramChatId || '',

@@ -1,4 +1,5 @@
 import { Debtor, Transaction, StoreSettings, DebtorWithStats } from '../types';
+import { cleanAccountCode, isAccountCodeMatch } from '../utils/accountCode';
 
 export const DEFAULT_TELEGRAM_BOT_TOKEN = '8804502479:AAEpAGxY53toTCSoIKiMdMs9yGR8arahR-Q';
 export const DEFAULT_TELEGRAM_BOT_USERNAME = 'deptstbot';
@@ -131,10 +132,10 @@ export async function checkAndLinkTelegramOwner(
 ): Promise<LinkTelegramResult> {
   try {
     const cleanToken = token.trim() || DEFAULT_TELEGRAM_BOT_TOKEN;
-    const cleanCode = shopCode.trim().toUpperCase();
+    const cleanCode = cleanAccountCode(shopCode);
 
     if (!cleanCode) {
-      return { success: false, message: 'رمز صاحب المحل غير محدد' };
+      return { success: false, message: 'رمز الحساب الخاص بك غير محدد' };
     }
 
     const response = await fetch(`https://api.telegram.org/bot${cleanToken}/getUpdates?limit=50`);
@@ -144,43 +145,36 @@ export async function checkAndLinkTelegramOwner(
       return { success: false, message: data.description || 'تعذر جلب التحديثات من بوت تليجرام' };
     }
 
-    // Find the latest message that contains or equals the shopCode or starts with /start <code/any>
+    // Find the latest message that matches this specific user's unique account code
     const updates = data.result.slice().reverse();
 
     for (const update of updates) {
       const msg = update.message;
       if (!msg || !msg.chat) continue;
 
-      const text = (msg.text || '').trim();
-      const upperText = text.toUpperCase();
-
-      // Check if message matches the code directly, or via /start G781011
-      const isCodeMatch =
-        upperText === cleanCode ||
-        upperText.includes(cleanCode) ||
-        upperText.startsWith(`/START ${cleanCode}`) ||
-        (upperText === '/START' && cleanCode === 'G781011');
+      const rawText = msg.text || '';
+      const isCodeMatch = isAccountCodeMatch(rawText, cleanCode);
 
       if (isCodeMatch) {
         const chatId = String(msg.chat.id);
         const ownerName = msg.from?.first_name
           ? `${msg.from.first_name}${msg.from.last_name ? ' ' + msg.from.last_name : ''}`
-          : msg.chat.title || 'صاحب المحل';
+          : msg.chat.title || 'صاحب الحساب';
         const username = msg.from?.username || '';
 
         // Send a celebratory confirmation message back to the owner on Telegram
         const welcomeText = `
-🎉 <b>تم بنجاح ربط البوت بحساب صاحب المحل!</b>
+🎉 <b>تم بنجاح ربط البوت بحسابك الخاص!</b>
 
 🏪 <b>المتجر:</b> ${storeName}
-🔑 <b>رمز صاحب المحل:</b> <code>${cleanCode}</code>
+🔑 <b>الرمز الخاص بحسابك:</b> <code>${cleanCode}</code>
 👤 <b>حساب تليجرام:</b> ${ownerName} ${username ? '(@' + username + ')' : ''}
 
-📌 <b>ماذا سيقدم لك هذا البوت؟</b>
-1️⃣ <b>إشعار فوري:</b> عند تسجيل أي حركة دين جديد أو استلام دفعة تسديد من أي زبون.
-2️⃣ <b>تقرير ونسخة يومية:</b> رفع تقرير مالي شامل ونسخة احتياطية من سجل الديون يومياً الساعة 12:00 صباحاً.
+📌 <b>الإشعارات المفعلة لهذا الحساب:</b>
+1️⃣ <b>إشعار فوري:</b> عند تسجيل أي حركة دين أو استلام دفعة من زبائن هذا الحساب.
+2️⃣ <b>تقرير ونسخة يومية:</b> إرسال تقرير مالي ونسخة احتياطية للديون يومياً الساعة 12:00 صباحاً.
 
-<i>نظام دفتر ديون السوبرماركت السحابي جاهز للعمل والمزامنة التلقائية.</i>
+<i>تم ربط هذا الرمز الخاص بحسابك بنجاح.</i>
         `.trim();
 
         await sendTelegramMessage(chatId, welcomeText, cleanToken);
@@ -190,14 +184,14 @@ export async function checkAndLinkTelegramOwner(
           chatId,
           ownerName,
           username,
-          message: `تم العثور على محادثة [${ownerName}] وربط الحساب بنجاح!`,
+          message: `تم العثور على محادثة [${ownerName}] وربط الرمز الخاص بحسابك [${cleanCode}] بنجاح!`,
         };
       }
     }
 
     return {
       success: false,
-      message: `لم يتم العثور على رسالة تحتوي على الرمز [${cleanCode}]. يرجى فتح البوت @${DEFAULT_TELEGRAM_BOT_USERNAME} وإرسال الرمز "${cleanCode}" ثم المحاولة مجدداً.`,
+      message: `لم يتم العثور على رسالة بالرمز الخاص بك [${cleanCode}]. يرجى فتح البوت @${DEFAULT_TELEGRAM_BOT_USERNAME} وإرسال رمز حسابك "${cleanCode}" ثم المحاولة مجدداً.`,
     };
   } catch (error: any) {
     console.error('Error linking Telegram owner:', error);

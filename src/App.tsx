@@ -207,7 +207,7 @@ export default function App() {
     const checkLinkInterval = async () => {
       try {
         const res = await checkAndLinkTelegramOwner(
-          settings.shopCode || 'G781011',
+          settings.shopCode,
           settings.storeName,
           settings.telegramBotToken || DEFAULT_TELEGRAM_BOT_TOKEN
         );

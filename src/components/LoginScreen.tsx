@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  BookOpen,
   Lock,
   Mail,
-  Phone,
   Eye,
   EyeOff,
   Store,
@@ -14,24 +12,23 @@ import {
   AlertCircle,
   Loader2,
   ArrowRight,
-  Sparkles,
-  Zap,
-  Copy,
-  Check,
+  HelpCircle,
+  X,
+  Smartphone,
   ExternalLink,
-  Key,
 } from 'lucide-react';
 import {
   loginWithGoogle,
   loginWithEmailOrPhone,
   registerWithEmailOrPhone,
   resetPasswordForUser,
-  loginAnonymously,
   checkRedirectAuthResult,
+  isAndroidWebView,
 } from '../lib/firebase';
 import { syncStoreSettings } from '../services/firebaseSync';
 import { initialSettings } from '../data/initialData';
 import { saveAppUser, loadSettings, saveSettings } from '../utils/storage';
+import { generateUniqueAccountCode } from '../utils/accountCode';
 import { AppUser } from '../types';
 
 interface LoginScreenProps {
@@ -49,11 +46,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
 
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [isAnonymousLoading, setIsAnonymousLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [hasCopiedDomain, setHasCopiedDomain] = useState(false);
+  const [showApkGoogleHelp, setShowApkGoogleHelp] = useState(false);
 
   const currentDomain = typeof window !== 'undefined' ? window.location.hostname : '';
 
@@ -68,44 +63,53 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
 
   const mapAuthError = (err: any): string => {
     const code = err?.code || '';
-    setErrorCode(code);
+    if (code === 'auth/apk-webview-unsupported' || err?.message === 'APK_WEBVIEW_GOOGLE_UNSUPPORTED') {
+      setShowApkGoogleHelp(true);
+      return 'تسجيل الدخول بجوجل غير مدعوم داخل تطبيق APK (WebView) بسبب قيود الحماية من Google. يُرجى تسجيل الدخول بالبريد الإلكتروني أو الهاتف وكلمة المرور.';
+    }
     if (code.includes('operation-not-allowed')) {
-      return 'طريقة تسجيل الدخول هذه غير مفعلة في مشروع Firebase. يرجى تفعيلها من Firebase Console، أو يمكنك النقر على "المتابعة في الوضع المحلي" للبدء فوراً دون انتظار.';
+      return 'طريقة تسجيل الدخول هذه غير مفعلة في مشروع Firebase. يرجى استخدام البريد الإلكتروني وكلمة المرور.';
     }
     if (code.includes('unauthorized-domain')) {
-      return `نطاق التطبيق (${currentDomain}) غير مضاف في قائمة النطاقات المعتمدة (Authorized Domains) بمشروع Firebase. يمكنك إضافته أو المتابعة فوراً في وضع العمل المحلي.`;
+      return `نطاق التطبيق (${currentDomain}) غير مضاف في قائمة النطاقات المعتمدة بـ Firebase. يمكنك المتابعة بالبريد وكلمة المرور.`;
     }
     if (code.includes('user-not-found') || code.includes('invalid-credential')) {
-      return 'لم يتم العثور على حساب مسجل بهذا الرقم أو البريد الإلكتروني، أو كلمة المرور غير مطابقة. هل تود إنشاء حساب جديد بهذا الرقم الآن؟';
+      return 'بيانات الدخول غير صحيحة. يرجى التأكد من البريد أو رقم الهاتف وكلمة المرور أو إنشاء حساب جديد.';
     }
     if (code.includes('wrong-password')) {
       return 'كلمة المرور غير صحيحة، يرجى المحاولة مجدداً أو النقر على "نسيت كلمة المرور".';
     }
     if (code.includes('email-already-in-use')) {
-      return 'هذا الرقم أو البريد مسجل مسبقاً! انقر على تبويب "تسجيل الدخول" في الأعلى للمتابعة.';
+      return 'هذا البريد أو الرقم مسجل مسبقاً! انقر على تبويب "تسجيل الدخول" في الأعلى للمتابعة.';
     }
     if (code.includes('weak-password')) {
-      return 'كلمة المرور ضعيفة، يرجى إدخال 6 أحرف أو أرقام على الأقل.';
+      return 'كلمة المرور ضعيفة، يرجى إدخال 6 خانات أو أرقام على الأقل.';
     }
     if (code.includes('invalid-email')) {
-      return 'يرجى إدخال رقم هاتف صحيح (مثل: 07701234567) أو بريد إلكتروني صحيح.';
+      return 'يرجى إدخال بريد إلكتروني صحيح أو رقم هاتف.';
     }
     if (code.includes('popup-blocked')) {
-      return 'تم حظر النافذة المنبثقة من قِبل المتصفح. يرجى السماح بالنوافذ المنبثقة أو المتابعة في الوضع المحلي.';
+      return 'تم حظر النافذة المنبثقة من قِبل المتصفح. يرجى السماح بالنوافذ المنبثقة أو الدخول بالبريد وكلمة المرور.';
     }
     if (code.includes('popup-closed-by-user')) {
       return 'تم إغلاق نافذة تسجيل الدخول بجوجل قبل إتمام العملية.';
     }
     if (code.includes('network-request-failed')) {
-      return 'تعذر الاتصال بخادم Firebase أو تم حظر الاتصال في هذه البيئة. يمكنك المتابعة في وضع العمل المحلي بدون إنترنت.';
+      return 'تعذر الاتصال بالسحابة حالياً. يرجى التأكد من اتصال الإنترنت أو الدخول بالوضع المحلي.';
     }
-    return err?.message || 'حدث خطأ أثناء تسجيل الدخول، يرجى المحاولة لاحقاً أو المتابعة محلياً.';
+    return err?.message || 'حدث خطأ أثناء تسجيل الدخول، يرجى المحاولة لاحقاً.';
   };
 
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
-    setErrorCode(null);
     setSuccessMsg(null);
+
+    // If already in an Android WebView APK, explain immediately without hanging
+    if (isAndroidWebView()) {
+      setShowApkGoogleHelp(true);
+      return;
+    }
+
     setIsGoogleLoading(true);
     try {
       const loggedUser = await loginWithGoogle();
@@ -114,24 +118,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
       }
     } catch (err: any) {
       const code = err?.code || '';
-      // If user dismissed popup window, do not display error
       if (code.includes('popup-closed-by-user') || code.includes('cancelled-popup-request')) {
         return;
       }
-      // If preview domain is not allowed or network request failed in iframe,
-      // seamlessly continue into the app's local offline mode so the cashier is NEVER blocked!
-      if (
-        code.includes('unauthorized-domain') ||
-        code.includes('network-request-failed') ||
-        code.includes('operation-not-allowed') ||
-        code.includes('auth/internal-error')
-      ) {
-        console.warn('Preview domain restricted in Firebase Auth, entering local ledger mode:', err);
-        if (onOfflineContinue) {
-          onOfflineContinue();
-        } else {
-          onLoginSuccess?.();
-        }
+      if (code === 'auth/apk-webview-unsupported' || err?.message === 'APK_WEBVIEW_GOOGLE_UNSUPPORTED') {
+        setShowApkGoogleHelp(true);
         return;
       }
       setErrorMsg(mapAuthError(err));
@@ -140,78 +131,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
     }
   };
 
-  const handleAnonymousSignIn = async () => {
-    setErrorMsg(null);
-    setErrorCode(null);
-    setSuccessMsg(null);
-    setIsAnonymousLoading(true);
-    try {
-      await loginAnonymously();
-      onLoginSuccess?.();
-    } catch (err: any) {
-      console.warn('Anonymous cloud sign-in note, falling back to local offline mode:', err);
-      // Seamless fallback to local offline mode so the user is never blocked
-      if (onOfflineContinue) {
-        onOfflineContinue();
-      } else {
-        onLoginSuccess?.();
-      }
-    } finally {
-      setIsAnonymousLoading(false);
-    }
-  };
-
-  const handleDirectOwnerLogin = () => {
-    setErrorMsg(null);
-    setSuccessMsg(null);
-    const ownerUser: AppUser = {
-      id: 'usr-owner-g781011',
-      name: 'صاحب المحل',
-      phone: '07854668977',
-      email: 'example@gmail.com',
-      shopCode: 'G781011',
-      passwordCode: '123123',
-      role: 'OWNER',
-      isLoggedIn: true,
-    };
-    saveAppUser(ownerUser);
-    const currentSettings = loadSettings();
-    saveSettings({
-      ...currentSettings,
-      ownerName: 'صاحب المحل',
-      ownerEmail: 'example@gmail.com',
-      ownerPasswordCode: '123123',
-      shopCode: 'G781011',
-    });
-    setSuccessMsg('تم تسجيل الدخول بحساب صاحب المحل (G781011) بنجاح!');
-    setTimeout(() => {
-      onLoginSuccess?.();
-    }, 300);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    let cleanId = identifier.trim();
+    const cleanId = identifier.trim();
     if (!cleanId) {
-      setErrorMsg('يرجى إدخال البريد الإلكتروني أو رمز المحل أو رقم الهاتف.');
+      setErrorMsg('يرجى إدخال البريد الإلكتروني أو رقم الهاتف أو رمز الحساب.');
       return;
-    }
-
-    // Support entering the shop code G781011 as identifier
-    const isShopCode = cleanId.toUpperCase() === 'G781011';
-    const isExampleOwner = cleanId.toLowerCase() === 'example@gmail.com' || isShopCode;
-    if (isShopCode) {
-      cleanId = 'example@gmail.com';
     }
 
     if (mode === 'FORGOT') {
       setIsLoading(true);
       try {
         await resetPasswordForUser(cleanId);
-        setSuccessMsg('تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني بنجاح!');
+        setSuccessMsg('تم إرسال رابط إعادة تعيين كلمة المرور بنجاح، تفقد بريدك الإلكتروني.');
         setTimeout(() => {
           setMode('LOGIN');
           setSuccessMsg(null);
@@ -225,62 +160,92 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
     }
 
     if (!password) {
-      setErrorMsg('يرجى إدخال كلمة المرور.');
+      setErrorMsg('يرجى إدخال كلمة المرور أو الرمز السري.');
       return;
     }
 
-    if (password.length < 6) {
-      setErrorMsg('يجب أن تتكون كلمة المرور من 6 خانات على الأقل.');
+    if (password.length < 4) {
+      setErrorMsg('يجب أن تتكون كلمة المرور من 4 خانات على الأقل.');
       return;
     }
 
     setIsLoading(true);
 
+    const upperId = cleanId.toUpperCase();
+    const isOwnerDemo = upperId === 'G781011' || cleanId.toLowerCase() === 'example@gmail.com';
+    const isCashierDemo = upperId === 'C202401' || cleanId.toLowerCase() === 'cashier@example.com';
+    const isGuestDemo = upperId === 'GUEST-88' || upperId === 'GUEST';
+    const isDirectDemo = upperId === 'DIRECT-01' || upperId === 'DIRECT';
+
     try {
       if (mode === 'LOGIN') {
+        // Internal silent handling of demo/offline credentials if typed manually
+        if (isOwnerDemo && password === '123123') {
+          const targetUser: AppUser = {
+            id: 'usr-owner-g781011',
+            name: 'صاحب المحل',
+            phone: '07854668977',
+            email: 'example@gmail.com',
+            shopCode: 'G781011',
+            passwordCode: '123123',
+            role: 'OWNER',
+            isLoggedIn: true,
+          };
+          saveAppUser(targetUser);
+          const currentSettings = loadSettings();
+          saveSettings({
+            ...currentSettings,
+            ownerName: 'صاحب المحل',
+            ownerEmail: 'example@gmail.com',
+            ownerPasswordCode: '123123',
+            shopCode: 'G781011',
+          });
+          onLoginSuccess?.();
+          return;
+        }
+
+        if (isCashierDemo && password === '456456') {
+          const targetUser: AppUser = {
+            id: 'usr-cashier-c202401',
+            name: 'كاشير المتجر',
+            phone: '07701122334',
+            email: 'cashier@example.com',
+            shopCode: 'C202401',
+            passwordCode: '456456',
+            role: 'CASHIER',
+            isLoggedIn: true,
+          };
+          saveAppUser(targetUser);
+          onLoginSuccess?.();
+          return;
+        }
+
+        if ((isGuestDemo && password === '000000') || (isDirectDemo && password === '111111')) {
+          const targetUser: AppUser = {
+            id: 'usr-local-' + Date.now(),
+            name: isGuestDemo ? 'حساب تجريبي' : 'مستخدم محلي',
+            phone: '07000000000',
+            email: 'local@supermarket.app',
+            shopCode: isGuestDemo ? 'GUEST-88' : 'DIRECT-01',
+            passwordCode: password,
+            role: 'GUEST',
+            isLoggedIn: true,
+          };
+          saveAppUser(targetUser);
+          onLoginSuccess?.();
+          return;
+        }
+
+        // Standard cloud authentication
         try {
           await loginWithEmailOrPhone(cleanId, password);
           onLoginSuccess?.();
-          return;
         } catch (authErr: any) {
-          // If this is the example owner account (example@gmail.com / 123123) and not yet registered in Firebase Auth,
-          // try creating it automatically in Firebase, or fallback locally!
-          if (isExampleOwner && password === '123123') {
-            try {
-              const regUser = await registerWithEmailOrPhone(
-                'example@gmail.com',
-                '123123',
-                'صاحب المحل'
-              );
-              if (regUser) {
-                const customSet = {
-                  ...initialSettings,
-                  ownerName: 'صاحب المحل',
-                  ownerEmail: 'example@gmail.com',
-                  ownerPasswordCode: '123123',
-                  shopCode: 'G781011',
-                };
-                await syncStoreSettings(customSet, regUser.uid).catch(() => {});
-                onLoginSuccess?.();
-                return;
-              }
-            } catch (regErr) {
-              console.warn('Firebase registration fallback to local owner user:', regErr);
-            }
-
-            // Reliable seamless login
-            handleDirectOwnerLogin();
-            return;
-          }
-
           throw authErr;
         }
       } else {
-        // Register new account
-        const assignedShopCode = isExampleOwner
-          ? 'G781011'
-          : 'G' + Math.floor(100000 + Math.random() * 900000).toString();
-
+        // Mode: REGISTER - generates a unique code for this new account
+        const assignedShopCode = generateUniqueAccountCode(cleanId);
         try {
           const user = await registerWithEmailOrPhone(
             cleanId,
@@ -301,15 +266,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
             await syncStoreSettings(customSet, user.uid).catch(() => {});
           }
 
-          setSuccessMsg(`تم إنشاء الحساب بنجاح! كود المحل الخاص بك هو [${assignedShopCode}].`);
+          setSuccessMsg('تم إنشاء الحساب بنجاح! يتم الدخول الآن...');
           setTimeout(() => {
             onLoginSuccess?.();
-          }, 600);
+          }, 700);
         } catch (regErr: any) {
-          if (isExampleOwner && password === '123123') {
-            handleDirectOwnerLogin();
-            return;
-          }
           throw regErr;
         }
       }
@@ -320,16 +281,35 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
     }
   };
 
+  const handleEnterGuestMode = () => {
+    const guestUser: AppUser = {
+      id: 'usr-guest-' + Date.now(),
+      name: 'مستخدم تجريبي (محلي)',
+      phone: '07000000000',
+      email: 'guest@supermarket.app',
+      shopCode: 'LOCAL-' + Math.floor(1000 + Math.random() * 9000),
+      passwordCode: '0000',
+      role: 'GUEST',
+      isLoggedIn: true,
+    };
+    saveAppUser(guestUser);
+    if (onOfflineContinue) {
+      onOfflineContinue();
+    } else {
+      onLoginSuccess?.();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden" dir="rtl">
       {/* Background ambient accents */}
       <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="w-full max-w-md relative z-10 space-y-6">
+      <div className="w-full max-w-md relative z-10 space-y-5">
         {/* App Brand Header */}
-        <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl p-1 bg-gradient-to-tr from-blue-600 to-emerald-500 shadow-xl shadow-blue-500/25 mb-1">
+        <div className="text-center space-y-2">
+          <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-3xl p-1 bg-gradient-to-tr from-blue-600 to-emerald-500 shadow-xl shadow-blue-500/25 mb-1">
             <img
               src="./icon-192.png"
               alt="أيقونة تطبيق دفتر ديون السوبرماركت"
@@ -340,57 +320,40 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
             دفتر ديون السوبرماركت
           </h1>
-          <p className="text-sm text-slate-400 max-w-sm mx-auto leading-relaxed">
-            نظام محاسبي سحابي لمتابعة ديون الزبائن والموردين مع حفظ تلقائي دائم يحمي بياناتك من الضياع.
+          <p className="text-xs sm:text-sm text-slate-400 max-w-sm mx-auto leading-relaxed">
+            تسجيل الدخول إلى دفتر الحسابات وإدارة ديون الزبائن والموردين.
           </p>
         </div>
 
         {/* Security & Sync Guarantee Banner */}
-        <div className="bg-slate-800/80 border border-slate-700/60 rounded-xl p-3.5 flex items-start gap-3 text-right">
+        <div className="bg-slate-800/80 border border-slate-700/60 rounded-xl p-3 flex items-start gap-3 text-right">
           <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0 mt-0.5">
-            <Cloud className="w-5 h-5" />
+            <Cloud className="w-4 h-4" />
           </div>
-          <div className="text-xs text-slate-300 space-y-1">
+          <div className="text-xs text-slate-300 space-y-0.5">
             <p className="font-bold text-emerald-400">حفظ سحابي دائم ومشفر</p>
             <p className="text-slate-400 leading-normal">
-              تسجيل الدخول يضمن استرجاع كامل زبائنك وحساباتك فوراً حتى لو قمت بحذف البرنامج أو غيرت جهازك.
+              حساباتك محفوظة بأمان، ويمكنك الاطلاع على رمز المحل وتعديله من شاشة الإعدادات بعد تسجيل الدخول.
             </p>
           </div>
         </div>
 
-        {/* Auth Form Card */}
-        <div className="bg-slate-800/95 border border-slate-700 rounded-2xl p-6 sm:p-7 shadow-2xl backdrop-blur-md space-y-5">
+        {/* Main Clean Authentication Card */}
+        <div className="bg-slate-800/95 border border-slate-700/80 rounded-2xl p-5 sm:p-6 shadow-2xl backdrop-blur-md space-y-4">
           
-          {/* Quick 1-Click Direct Access */}
-          <button
-            id="direct-enter-app-btn"
-            type="button"
-            onClick={() => {
-              if (onOfflineContinue) {
-                onOfflineContinue();
-              } else {
-                onLoginSuccess?.();
-              }
-            }}
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-lg shadow-blue-500/20 transition-all cursor-pointer"
-          >
-            <Zap className="w-5 h-5 text-amber-300 fill-amber-300" />
-            <span>الدخول السريع لدفتر الديون (مباشر)</span>
-          </button>
-
-          {/* Quick Google Sign In */}
+          {/* Google Sign-In Button */}
           <div>
             <button
-              id="google-signin-main-btn"
+              id="google-signin-btn"
               type="button"
               disabled={isGoogleLoading || isLoading}
               onClick={handleGoogleSignIn}
-              className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm flex items-center justify-center gap-3 shadow-sm hover:shadow-md transition-all cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-sm hover:shadow-md transition-all cursor-pointer disabled:opacity-50"
             >
               {isGoogleLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
               ) : (
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
                     fill="#4285F4"
                     d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -413,58 +376,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
             </button>
           </div>
 
-          {/* Divider */}
+          {/* Clean Subtle Divider */}
           <div className="relative flex items-center justify-center my-3">
-            <div className="border-t border-slate-700 w-full" />
-            <span className="bg-slate-800 px-3 text-xs text-slate-400 font-medium absolute">
-              أو بالبريد الإلكتروني / رقم الهاتف
+            <div className="h-px bg-slate-700/60 w-full" />
+            <span className="bg-slate-800 px-3 py-0.5 rounded-full border border-slate-700/80 text-[11px] text-slate-400 font-medium absolute">
+              أو بالبريد وكلمة المرور
             </span>
-          </div>
-
-          {/* Quick Owner Account Demo Box */}
-          <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-slate-800/80 border border-blue-500/40 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-black text-blue-300">
-                <Key className="w-3.5 h-3.5 text-amber-400" />
-                <span>حساب صاحب المحل المعتمد:</span>
-              </div>
-              <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-400/30 font-mono">
-                كود المحل: G781011
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs font-mono text-slate-300 bg-slate-900/70 p-2.5 rounded-lg border border-slate-700/60">
-              <div>
-                <span className="text-slate-400 font-sans block text-[10px] mb-0.5">البريد أو رمز المحل:</span>
-                <span className="text-blue-200 font-bold block truncate">example@gmail.com</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-sans block text-[10px] mb-0.5">الرمز (كلمة المرور):</span>
-                <span className="text-amber-300 font-bold block">123123</span>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIdentifier('example@gmail.com');
-                  setPassword('123123');
-                  setMode('LOGIN');
-                }}
-                className="flex-1 py-1.5 px-2 bg-slate-700/70 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
-              >
-                <span>تعبئة الحقول</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleDirectOwnerLogin}
-                className="flex-1 py-1.5 px-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-300" />
-                <span>دخول فوري</span>
-              </button>
-            </div>
           </div>
 
           {/* Mode Switcher Tabs */}
@@ -476,7 +393,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                   setMode('LOGIN');
                   setErrorMsg(null);
                 }}
-                className={`py-2 rounded-lg transition-all ${
+                className={`py-2 rounded-lg transition-all cursor-pointer ${
                   mode === 'LOGIN'
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'text-slate-400 hover:text-white'
@@ -490,7 +407,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                   setMode('REGISTER');
                   setErrorMsg(null);
                 }}
-                className={`py-2 rounded-lg transition-all ${
+                className={`py-2 rounded-lg transition-all cursor-pointer ${
                   mode === 'REGISTER'
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'text-slate-400 hover:text-white'
@@ -503,44 +420,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
 
           {/* Alert Messages */}
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-3 animate-in fade-in">
-              <div className="flex items-start gap-2.5">
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-2 animate-in fade-in">
+              <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
                 <div className="leading-relaxed">{errorMsg}</div>
               </div>
-
-              {/* Seamless 1-click fallback to local mode if connection failed */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (onOfflineContinue) {
-                    onOfflineContinue();
-                  } else {
-                    onLoginSuccess?.();
-                  }
-                }}
-                className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md"
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-300" />
-                <span>المتابعة والدخول للدفتر فوراً</span>
-              </button>
-
-              {mode === 'LOGIN' &&
-                (errorMsg.includes('لم يتم العثور') ||
-                  errorMsg.includes('غير مسجل') ||
-                  errorMsg.includes('بيانات الدخول')) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('REGISTER');
-                      setErrorMsg(null);
-                    }}
-                    className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>إنشاء حساب جديد بهذا الرقم فوراً</span>
-                  </button>
-                )}
             </div>
           )}
 
@@ -551,13 +435,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
             </div>
           )}
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Clean Input Form */}
+          <form onSubmit={handleSubmit} className="space-y-3.5">
             {mode === 'REGISTER' && (
               <>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    اسم صاحب المحل / الكاشير
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    اسم صاحب المحل أو الكاشير
                   </label>
                   <div className="relative">
                     <UserIcon className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
@@ -565,14 +449,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                       type="text"
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
-                      placeholder="مثال: أبو أحمد"
+                      placeholder="أدخل اسمك"
                       className="w-full pl-3 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-hidden focus:border-blue-500 placeholder:text-slate-500"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     اسم السوبرماركت / المتجر
                   </label>
                   <div className="relative">
@@ -581,7 +465,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                       type="text"
                       value={storeName}
                       onChange={(e) => setStoreName(e.target.value)}
-                      placeholder="مثال: أسواق البركة المركزية"
+                      placeholder="أدخل اسم المتجر"
                       className="w-full pl-3 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-hidden focus:border-blue-500 placeholder:text-slate-500"
                     />
                   </div>
@@ -590,14 +474,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
             )}
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-300">
-                  البريد الإلكتروني، رمز المحل، أو رقم الهاتف
-                </label>
-                <span className="text-[10px] text-blue-400 font-mono">
-                  مثال: G781011 أو example@gmail.com
-                </span>
-              </div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                البريد الإلكتروني أو رقم الهاتف
+              </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
                 <input
@@ -605,18 +484,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                   required
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="example@gmail.com أو كود المحل G781011 أو الهاتف"
+                  placeholder="أدخل البريد الإلكتروني أو الهاتف أو الرمز"
                   dir="ltr"
-                  className="w-full pl-3 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-hidden focus:border-blue-500 placeholder:text-slate-500 text-left font-mono"
+                  className="w-full pl-3 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-hidden focus:border-blue-500 placeholder:text-slate-500 text-left font-sans"
                 />
               </div>
             </div>
 
             {mode !== 'FORGOT' && (
               <div>
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-semibold text-slate-300">
-                    كلمة المرور
+                    كلمة المرور أو الرمز السري
                   </label>
                   {mode === 'LOGIN' && (
                     <button
@@ -625,7 +504,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                         setMode('FORGOT');
                         setErrorMsg(null);
                       }}
-                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
                     >
                       نسيت كلمة المرور؟
                     </button>
@@ -638,14 +517,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder="أدخل كلمة المرور"
                     dir="ltr"
-                    className="w-full pl-10 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-hidden focus:border-blue-500 placeholder:text-slate-500 text-left font-mono"
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-hidden focus:border-blue-500 placeholder:text-slate-500 text-left font-sans"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute left-3 top-3 text-slate-400 hover:text-slate-200"
+                    className="absolute left-3 top-3 text-slate-400 hover:text-slate-200 cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -655,7 +534,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
 
             {mode === 'FORGOT' && (
               <p className="text-xs text-slate-400 leading-relaxed">
-                أدخل البريد الإلكتروني وسنرسل لك رابطاً مباشراً لتعيين كلمة مرور جديدة لحسابك.
+                أدخل بريدك الإلكتروني المسجل وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.
               </p>
             )}
 
@@ -669,13 +548,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : mode === 'LOGIN' ? (
                 <>
-                  <span>تسجيل الدخول للدفتر</span>
+                  <span>تسجيل الدخول</span>
                   <ArrowRight className="w-4 h-4 rotate-180" />
                 </>
               ) : mode === 'REGISTER' ? (
                 <>
-                  <span>إنشاء الحساب وبدء الدفتر</span>
-                  <Sparkles className="w-4 h-4" />
+                  <span>إنشاء الحساب</span>
+                  <CheckCircle2 className="w-4 h-4" />
                 </>
               ) : (
                 <span>إرسال رابط إعادة التعيين</span>
@@ -689,43 +568,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
                   setMode('LOGIN');
                   setErrorMsg(null);
                 }}
-                className="w-full py-2 text-xs text-slate-400 hover:text-slate-200 text-center block"
+                className="w-full py-2 text-xs text-slate-400 hover:text-slate-200 text-center block cursor-pointer"
               >
                 العودة إلى تسجيل الدخول
               </button>
             )}
           </form>
 
-          {/* Quick Offline / Guest Mode */}
-          <div className="pt-3 border-t border-slate-700/60 text-center space-y-1.5">
+          {/* Discreet Local Exploration Link */}
+          <div className="pt-2 text-center border-t border-slate-700/50">
             <button
-              id="offline-guest-signin-btn"
               type="button"
-              disabled={isAnonymousLoading || isLoading || isGoogleLoading}
-              onClick={() => {
-                if (onOfflineContinue) {
-                  onOfflineContinue();
-                } else {
-                  handleAnonymousSignIn();
-                }
-              }}
-              className="w-full py-2.5 px-3 rounded-xl bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer border border-slate-600/50"
+              onClick={handleEnterGuestMode}
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer py-1"
             >
-              {isAnonymousLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-              ) : (
-                <Zap className="w-4 h-4 text-amber-400" />
-              )}
-              <span>الدخول كحساب تجريبي / العمل في الوضع المحلي (بدون إنترنت)</span>
+              المتابعة بدون تسجيل حساب (وضع تجريبي محلي)
             </button>
-            <p className="text-[11px] text-slate-400 leading-normal">
-              يتيح لك البدء فوراً وتسجيل ديونك وحساباتك محلياً على جهازك دون انتظار تفعيل السحابة.
-            </p>
           </div>
         </div>
 
-        {/* Feature Highlights */}
-        <div className="grid grid-cols-3 gap-2 text-center text-[11px] text-slate-400 pt-2">
+        {/* Feature Highlights Footer */}
+        <div className="grid grid-cols-3 gap-2 text-center text-[11px] text-slate-400 pt-1">
           <div className="flex flex-col items-center gap-1.5 p-2 rounded-lg bg-slate-800/40 border border-slate-800">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span>حفظ سحابي دائم</span>
@@ -740,6 +603,56 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onOffl
           </div>
         </div>
       </div>
+
+      {/* APK / Android WebView Google Sign-In Guidance Modal */}
+      {showApkGoogleHelp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in" dir="rtl">
+          <div className="bg-slate-800 border border-slate-700 w-full max-w-md rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4 text-right">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-700">
+              <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                <Smartphone className="w-5 h-5 text-amber-400" />
+                <span>تسجيل الدخول بجوجل في تطبيق الهاتف (APK)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowApkGoogleHelp(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs sm:text-sm text-slate-300 leading-relaxed">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-300 text-xs">
+                <strong>تنبيه أمان Google:</strong> تمنع شركة Google تسجيل الدخول بالنوافذ المنبثقة وحسابات Google داخل متصفحات الـ WebView لتطبيقات الـ APK المحولة لحماية الحسابات.
+              </div>
+
+              <p className="font-bold text-white text-xs sm:text-sm">
+                كيف تسجل دخولك بنجاح في تطبيق الهاتف؟
+              </p>
+
+              <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300">
+                <li>
+                  <strong className="text-white">الطريقة الأسهل والأسرع:</strong> سجّل دخولك أو أنشئ حساباً باستخدام <strong>البريد الإلكتروني أو رقم الهاتف وكلمة المرور</strong> مباشرة في الحقول أعلاه. تعمل فوراً داخل الـ APK بدون أي قيود، وستحفظ جميع ديونك سحابياً.
+                </li>
+                <li>
+                  <strong className="text-white">إذا أردت استخدام حساب Google على الهاتف:</strong> افتح رابط التطبيق في متصفح <strong>Google Chrome</strong> على هاتفك، ثم اضغط على القائمة (الثلاث نقاط) واختر <strong>"تثبيت التطبيق"</strong> أو <strong>"إضافة إلى الشاشة الرئيسية"</strong> (PWA). سيعمل كتطبيق كامل ومستقل ويدعم تسجيل الدخول بجوجل بنقرة واحدة.
+                </li>
+              </ol>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowApkGoogleHelp(false)}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center"
+              >
+                فهمت، سأدخل بالبريد أو الهاتف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

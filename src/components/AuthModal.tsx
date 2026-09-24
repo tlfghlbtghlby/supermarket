@@ -42,20 +42,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     const cleanInput = phone.trim();
-    const isOwnerCode = cleanInput.toUpperCase() === 'G781011';
-    const isOwnerEmail = cleanInput.toLowerCase() === 'example@gmail.com';
-    const isOwnerPhone = cleanInput.endsWith('8977');
-    const isOwner = isOwnerCode || isOwnerEmail || isOwnerPhone;
+    const upperInput = cleanInput.toUpperCase();
+    const isOwner = upperInput === 'G781011' || cleanInput.toLowerCase() === 'example@gmail.com' || cleanInput.endsWith('8977');
+    const isCashier = upperInput === 'C202401' || cleanInput.toLowerCase() === 'cashier@example.com';
+    const isGuest = upperInput === 'GUEST-88' || upperInput === 'GUEST' || cleanInput.toLowerCase() === 'guest@example.com';
+    const isDirect = upperInput === 'DIRECT-01' || upperInput === 'DIRECT' || cleanInput.toLowerCase() === 'direct@example.com';
 
     // Authenticate user
     const user: AppUser = {
       id: 'usr-' + Date.now(),
-      name: isOwner ? 'صاحب المحل (أبو أحمد)' : 'مستخدم (' + cleanInput + ')',
-      phone: isOwner ? '07854668977' : cleanInput,
-      email: isOwner ? 'example@gmail.com' : undefined,
-      shopCode: isOwner ? 'G781011' : undefined,
+      name: isOwner
+        ? 'صاحب المحل (أبو أحمد)'
+        : isCashier
+        ? 'كاشير المتجر (الموظف)'
+        : isGuest
+        ? 'حساب ضيف (أوفلاين)'
+        : isDirect
+        ? 'دخول مباشر سريع'
+        : 'مستخدم (' + cleanInput + ')',
+      phone: isOwner
+        ? '07854668977'
+        : isCashier
+        ? '07701122334'
+        : isGuest
+        ? '07000000088'
+        : cleanInput,
+      email: isOwner
+        ? 'example@gmail.com'
+        : isCashier
+        ? 'cashier@example.com'
+        : isGuest
+        ? 'guest@example.com'
+        : undefined,
+      shopCode: isOwner
+        ? 'G781011'
+        : isCashier
+        ? 'C202401'
+        : isGuest
+        ? 'GUEST-88'
+        : isDirect
+        ? 'DIRECT-01'
+        : undefined,
       passwordCode: password.trim(),
-      role: isOwner ? 'OWNER' : 'EMPLOYEE',
+      role: isOwner ? 'OWNER' : isCashier ? 'CASHIER' : isGuest ? 'GUEST' : isDirect ? 'DIRECT' : 'EMPLOYEE',
       isLoggedIn: true,
     };
     onLogin(user);
