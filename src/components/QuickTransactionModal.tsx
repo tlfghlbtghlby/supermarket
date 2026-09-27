@@ -488,6 +488,23 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
             </label>
           )}
 
+          {/* Active Session Indicator & Switcher */}
+          <div className="flex items-center justify-between p-2.5 bg-amber-50/70 dark:bg-amber-950/30 rounded-xl border border-amber-200/80 dark:border-amber-800/60 text-xs">
+            <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+              <span className="text-amber-600 dark:text-amber-400">🏷️ تسجيل باسم الجلسة:</span>
+              <span className="px-2 py-0.5 rounded-lg bg-amber-500 text-slate-900 font-black">{currentSessionName || 'الجلسة 1'}</span>
+            </div>
+            {onChangeSession && (
+              <button
+                type="button"
+                onClick={onChangeSession}
+                className="px-2.5 py-1 rounded-lg bg-white dark:bg-[#182035] hover:bg-amber-100 dark:hover:bg-[#202b46] text-amber-900 dark:text-amber-200 font-bold border border-amber-300 dark:border-amber-700/70 text-[11px] transition-colors cursor-pointer"
+              >
+                تغيير الجلسة
+              </button>
+            )}
+          </div>
+
           {/* Large Action Buttons */}
           <div className="pt-2 flex items-center gap-3">
             <button

@@ -267,6 +267,8 @@ export async function syncStoreSettings(settings: StoreSettings, userId: string)
         enableTelegramAlerts: settings.enableTelegramAlerts ?? true,
         enableDailyMidnightReport: settings.enableDailyMidnightReport ?? true,
         lastDailyMidnightReportDate: settings.lastDailyMidnightReportDate || '',
+        deviceSessions: settings.deviceSessions || [],
+        mainDeviceId: settings.mainDeviceId || '',
         updatedAt: new Date().toISOString(),
       },
       { merge: true }

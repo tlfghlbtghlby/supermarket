@@ -69,6 +69,7 @@ export function getInitialDeviceSessions(
   currentDeviceId: string;
   isCurrentDeviceMain: boolean;
   activeMainDeviceId: string;
+  effectiveSessionName: string;
 } {
   const currentDeviceId = getOrCreateDeviceId();
   const info = detectDeviceInfo();
@@ -83,16 +84,28 @@ export function getInitialDeviceSessions(
   }
 
   const existingIndex = sessions.findIndex((s) => s.id === currentDeviceId);
+  let effectiveSessionName = currentSessionName;
 
   if (existingIndex >= 0) {
-    // Update active time and session name if changed
+    const existing = sessions[existingIndex];
+    // If the session in cloud already has a custom name assigned (e.g. "father" set by admin):
+    if (existing.name && existing.name.trim()) {
+      if (!currentSessionName || currentSessionName === 'الجلسة 1' || currentSessionName === existing.name) {
+        effectiveSessionName = existing.name.trim();
+      } else {
+        effectiveSessionName = currentSessionName.trim();
+      }
+    } else {
+      effectiveSessionName = currentSessionName || 'الجلسة 1';
+    }
+
     sessions[existingIndex] = {
-      ...sessions[existingIndex],
-      name: currentSessionName || sessions[existingIndex].name,
+      ...existing,
+      name: effectiveSessionName,
       browserInfo: info.browserInfo,
       deviceType: info.deviceType,
       lastActiveAt: now,
-      isMainDevice: sessions[existingIndex].id === activeMainId,
+      isMainDevice: existing.id === activeMainId,
     };
   } else {
     // Add this device as a new session
@@ -100,9 +113,16 @@ export function getInitialDeviceSessions(
     if (isMain) {
       activeMainId = currentDeviceId;
     }
+    effectiveSessionName =
+      currentSessionName && currentSessionName !== 'الجلسة 1'
+        ? currentSessionName
+        : isMain
+        ? 'الجلسة 1 (الرئيسية)'
+        : `جلسة ${sessions.length + 1}`;
+
     const newSession: DeviceSession = {
       id: currentDeviceId,
-      name: currentSessionName || (isMain ? 'الجلسة 1 (الرئيسية)' : `جلسة ${sessions.length + 1}`),
+      name: effectiveSessionName,
       deviceType: info.deviceType,
       browserInfo: info.browserInfo,
       isMainDevice: isMain,
@@ -125,5 +145,6 @@ export function getInitialDeviceSessions(
     currentDeviceId,
     isCurrentDeviceMain,
     activeMainDeviceId: activeMainId,
+    effectiveSessionName,
   };
 }

@@ -1,5 +1,7 @@
 import { Debtor, Transaction, StoreSettings, DebtorWithStats } from '../types';
 import { cleanAccountCode, isAccountCodeMatch } from '../utils/accountCode';
+import { generateDebtExcelBlob } from '../utils/backupGenerators';
+import { loadDebtors, loadTransactions } from '../utils/storage';
 
 export const DEFAULT_TELEGRAM_BOT_TOKEN = '8804502479:AAEpAGxY53toTCSoIKiMdMs9yGR8arahR-Q';
 export const DEFAULT_TELEGRAM_BOT_USERNAME = 'deptstbot';
@@ -84,7 +86,7 @@ export async function sendTelegramMessage(
  */
 export async function sendTelegramDocument(
   chatId: string | number,
-  fileContent: string,
+  fileContent: string | Blob | Uint8Array,
   fileName: string,
   caption: string,
   token: string = DEFAULT_TELEGRAM_BOT_TOKEN
@@ -101,7 +103,15 @@ export async function sendTelegramDocument(
     formData.append('chat_id', cleanChatId);
     formData.append('caption', caption);
     formData.append('parse_mode', 'HTML');
-    const blob = new Blob([fileContent], { type: 'application/json;charset=utf-8' });
+
+    let blob: Blob;
+    if (fileContent instanceof Blob) {
+      blob = fileContent;
+    } else if (typeof fileContent !== 'string') {
+      blob = new Blob([fileContent]);
+    } else {
+      blob = new Blob([fileContent], { type: 'application/octet-stream;charset=utf-8' });
+    }
     formData.append('document', blob, fileName);
 
     const response = await fetch(`https://api.telegram.org/bot${cleanToken}/sendDocument`, {
@@ -258,10 +268,11 @@ ${transaction.notes ? `📝 <b>البيان / الملاحظات:</b> ${transact
 
 /**
  * Prepares and sends the daily 12:00 AM (midnight) debts summary & backup document
+ * Generates and sends ONLY the Excel (.xlsx) file as requested by the user
  */
 export async function sendTelegramDailyBackupReport(
-  debtors: Debtor[],
-  transactions: Transaction[],
+  debtorsInput: Debtor[],
+  transactionsInput: Transaction[],
   settings: StoreSettings
 ): Promise<{ success: boolean; error?: string }> {
   const token = settings.telegramBotToken || DEFAULT_TELEGRAM_BOT_TOKEN;
@@ -270,6 +281,10 @@ export async function sendTelegramDailyBackupReport(
   if (!chatId) {
     return { success: false, error: 'معرف المحادثة (Chat ID) غير مربوط بحساب صاحب المحل' };
   }
+
+  // Ensure debtors and transactions fallback to localStorage so data is NEVER empty
+  const debtors = debtorsInput && debtorsInput.length > 0 ? debtorsInput : loadDebtors();
+  const transactions = transactionsInput && transactionsInput.length > 0 ? transactionsInput : loadTransactions();
 
   const currency = settings.customCurrencyName || settings.currency || 'د.ع';
   const today = new Date();
@@ -318,44 +333,50 @@ export async function sendTelegramDailyBackupReport(
   }
 
   const summaryMessage = `
-🌙 <b>التقرير اليومي والنسخة المحفوظة للديون (الساعة 12:00)</b>
+🌙 <b>التقرير اليومي وملف إكسل الديون (الساعة 12:00)</b>
 🏪 <b>المتجر:</b> ${settings.storeName}
-📅 <b>التاريخ:</b> ${dateStr} - ${timeStr}
+📅 <b>تاريخ اليوم:</b> ${dateStr} - ${timeStr}
 
 📊 <b>الملخص المالي الشامل:</b>
-• 👥 <b>إجمالي عدد الزبائن المدينين:</b> ${debtorBalances.length} زبون
+• 👥 <b>إجمالي عدد الزبائن المدينين:</b> ${debtorBalances.length} زبون (من إجمالي ${debtors.length})
 • 💰 <b>إجمالي الديون المتبقية في السوق:</b> <b><code>${netBalance.toLocaleString()} ${currency}</code></b>
 • 📈 <b>إجمالي الديون التراكمية:</b> <code>${totalAllDebt.toLocaleString()} ${currency}</code>
 • 💵 <b>إجمالي التسديدات المستلمة:</b> <code>${totalAllPaid.toLocaleString()} ${currency}</code>${topDebtorsText}
 
-📁 <i>تم إرفاق نسخة احتياطية كاملة ومحدثة من سجل الديون والزبائن أدناه لضمان حفظ بياناتك بشكل آمن دائماً.</i>
+📁 <i>تم إرفاق ملف إكسل رسمي وشامل (.xlsx) يحتوي على اسم كل زبون، الدين الذي عليه، وتاريخ اليوم أدناه.</i>
   `.trim();
 
-  // Send summary text message first
+  // 1. Send summary text message first
   await sendTelegramMessage(chatId, summaryMessage, token);
 
-  // Prepare backup JSON document payload
-  const backupPayload = {
-    app: 'Supermarket Debt Ledger',
-    storeName: settings.storeName,
-    shopCode: settings.shopCode || 'G781011',
-    ownerName: settings.ownerName,
-    exportedAt: new Date().toISOString(),
-    currency,
-    financialSummary: {
-      totalOutstandingDebt: netBalance,
-      totalCumulativeDebt: totalAllDebt,
-      totalPaymentsReceived: totalAllPaid,
-      activeDebtorsCount: debtorBalances.length,
-    },
-    debtors,
-    transactions,
-  };
-
-  const fileContent = JSON.stringify(backupPayload, null, 2);
+  const cleanStoreName = (settings.storeName || 'سوبرماركت').replace(/\s+/g, '_');
   const isoDate = new Date().toISOString().slice(0, 10);
-  const fileName = `نسخة_ديون_${settings.storeName.replace(/\s+/g, '_')}_${isoDate}.json`;
-  const docCaption = `📦 <b>نسخة احتياطية كاملة لسجل الديون</b> - ${settings.storeName} (${isoDate})`;
 
-  return await sendTelegramDocument(chatId, fileContent, fileName, docCaption, token);
+  // 2. Generate and Send ONLY the Excel (.xlsx) Backup
+  try {
+    const excelBlob = await generateDebtExcelBlob(debtors, transactions, settings);
+    const excelFileName = `سجل_ديون_${cleanStoreName}_${isoDate}.xlsx`;
+    const excelCaption = `📊 <b>ملف إكسل شامل لسجل الديون والزبائن وتاريخ اليوم</b>\n🏪 ${settings.storeName}\n📅 <b>تاريخ اليوم:</b> ${dateStr}\n💰 <b>إجمالي الديون المتبقية:</b> <code>${netBalance.toLocaleString()} ${currency}</code>\n👥 <b>عدد الزبائن:</b> ${debtors.length} زبون`;
+
+    return await sendTelegramDocument(chatId, excelBlob, excelFileName, excelCaption, token);
+  } catch (excelErr: any) {
+    console.error('Failed to send Excel backup to Telegram:', excelErr);
+    return { success: false, error: excelErr?.message || 'فشل توليد أو إرسال ملف الإكسل' };
+  }
 }
+
+/**
+ * On-demand function to send ONLY the comprehensive Excel file to Telegram
+ */
+export async function sendTelegramExcelBackup(
+  debtors: Debtor[],
+  transactions: Transaction[],
+  settings: StoreSettings
+): Promise<{ success: boolean; error?: string }> {
+  return await sendTelegramDailyBackupReport(debtors, transactions, settings);
+}
+
+// Keep backward compatible alias
+export const sendTelegramExcelAndPowerPointBackup = sendTelegramExcelBackup;
+
+

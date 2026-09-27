@@ -32,8 +32,11 @@ import {
   loadSettings,
   saveSettings,
   clearAllLocalStoreData,
+  loadCurrentSessionName,
+  saveCurrentSessionName,
 } from '../utils/storage';
 import { generateUniqueAccountCode } from '../utils/accountCode';
+import { getInitialDeviceSessions, getOrCreateDeviceId } from '../utils/deviceSession';
 
 export function useFirebaseSync() {
   const [user, setUser] = useState<User | null>(null);
@@ -146,23 +149,55 @@ export function useFirebaseSync() {
                 ? cloudSettings.shopCode
                 : generateUniqueAccountCode(user.uid);
 
+            const currentDeviceId = getOrCreateDeviceId();
+            const cloudSessionForMe = (cloudSettings.deviceSessions || []).find(
+              (s) => s.id === currentDeviceId
+            );
+
+            // If cloud has an assigned name for THIS device (e.g. "father"), use it!
+            const localSessionName = loadCurrentSessionName();
+            const baseSessionName =
+              cloudSessionForMe && cloudSessionForMe.name && cloudSessionForMe.name.trim()
+                ? cloudSessionForMe.name.trim()
+                : localSessionName;
+
+            const sessionInit = getInitialDeviceSessions(
+              cloudSettings.deviceSessions || [],
+              baseSessionName,
+              cloudSettings.mainDeviceId
+            );
+
+            // Persist effective session name locally so all modals/transactions use it
+            if (sessionInit.effectiveSessionName) {
+              saveCurrentSessionName(sessionInit.effectiveSessionName);
+            }
+
             const mergedSettings: StoreSettings = {
               ...initialSettings,
               ...cloudSettings,
               ownerEmail: cloudSettings.ownerEmail || user.email || initialSettings.ownerEmail || 'example@gmail.com',
               ownerPasswordCode: cloudSettings.ownerPasswordCode || '123123',
               shopCode: userUniqueCode,
+              deviceSessions: sessionInit.sessions,
+              mainDeviceId: sessionInit.activeMainDeviceId,
             };
             setSettings(mergedSettings);
             saveSettings(mergedSettings);
 
-            // Persist the unique code to Firestore if it wasn't there or was the legacy default
-            if (!cloudSettings.shopCode || cloudSettings.shopCode === 'G781011') {
+            const wasDevicePresent = (cloudSettings.deviceSessions || []).some(
+              (s) => s.id === sessionInit.currentDeviceId
+            );
+
+            // Persist if new device joined or unique code was missing
+            if (!wasDevicePresent || !cloudSettings.shopCode || cloudSettings.shopCode === 'G781011') {
               syncStoreSettings(mergedSettings, user.uid).catch(() => {});
             }
           } else {
             // First time login - initialize settings with user's unique code
             const userUniqueCode = generateUniqueAccountCode(user.uid);
+            const currentSessionName = loadCurrentSessionName();
+            const sessionInit = getInitialDeviceSessions([], currentSessionName);
+
             const defaultSet: StoreSettings = {
               ...initialSettings,
               ownerName: user.displayName || 'صاحب المحل',
@@ -170,6 +205,8 @@ export function useFirebaseSync() {
               ownerPasswordCode: '123123',
               shopCode: userUniqueCode,
               storeName: user.displayName ? `سوبرماركت ${user.displayName}` : 'دفتر ديون السوبرماركت',
+              deviceSessions: sessionInit.sessions,
+              mainDeviceId: sessionInit.activeMainDeviceId,
             };
             syncStoreSettings(defaultSet, user.uid).catch(() => {});
             setSettings(defaultSet);

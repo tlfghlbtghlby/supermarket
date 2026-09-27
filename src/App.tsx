@@ -10,9 +10,14 @@ import {
   Supplier,
   SupplierTransaction,
   AppUser,
+  DeviceSession,
 } from './types';
 import { useFirebaseSync } from './hooks/useFirebaseSync';
 import { useTheme } from './hooks/useTheme';
+import {
+  downloadExcelBackup,
+  downloadPowerPointBackup,
+} from './utils/backupGenerators';
 import {
   computeDebtorStats,
   exportToCSV,
@@ -28,6 +33,8 @@ import {
   sendTelegramDailyBackupReport,
 } from './services/telegramBot';
 import {
+  loadDebtors,
+  loadTransactions,
   loadSuppliers,
   saveSuppliers,
   loadSupplierTransactions,
@@ -38,7 +45,7 @@ import {
   loadCurrentSessionName,
   saveCurrentSessionName,
 } from './utils/storage';
-import { getOrCreateDeviceId } from './utils/deviceSession';
+import { getOrCreateDeviceId, getInitialDeviceSessions } from './utils/deviceSession';
 import { Header } from './components/Header';
 import { StatsCards } from './components/StatsCards';
 import { DebtorList } from './components/DebtorList';
@@ -90,7 +97,7 @@ interface WhatsAppAlertPrompt {
 }
 
 export default function App() {
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark, toggleTheme, themeMode, setThemeMode } = useTheme();
 
   const {
     user,
@@ -226,8 +233,40 @@ export default function App() {
     const clean = newName.trim() || 'الجلسة 1';
     saveCurrentSessionName(clean);
     setCurrentSessionName(clean);
+
+    // Update this device's session in settings.deviceSessions and save to storeSettings
+    const devId = getOrCreateDeviceId();
+    const existingSessions = settings.deviceSessions || [];
+    let updatedSessions: DeviceSession[];
+
+    const exists = existingSessions.some((s) => s.id === devId);
+    if (exists) {
+      updatedSessions = existingSessions.map((s) =>
+        s.id === devId ? { ...s, name: clean, lastActiveAt: new Date().toISOString() } : s
+      );
+    } else {
+      const initial = getInitialDeviceSessions(existingSessions, clean, settings.mainDeviceId);
+      updatedSessions = initial.sessions;
+    }
+
+    const updatedSettings: StoreSettings = {
+      ...settings,
+      deviceSessions: updatedSessions,
+    };
+    saveStoreSettings(updatedSettings);
+
     showToast(`تم تعيين واعتماد الجلسة "${clean}" بنجاح.`);
-  }, []);
+  }, [settings, saveStoreSettings]);
+
+  // Synchronize currentSessionName if settings.deviceSessions updates from cloud
+  useEffect(() => {
+    const devId = getOrCreateDeviceId();
+    const mySession = (settings.deviceSessions || []).find((s) => s.id === devId);
+    if (mySession && mySession.name && mySession.name.trim() && mySession.name !== currentSessionName) {
+      setCurrentSessionName(mySession.name);
+      saveCurrentSessionName(mySession.name);
+    }
+  }, [settings.deviceSessions, currentSessionName]);
 
   // View navigation helper that pushes state to history
   const handleViewChange = useCallback(
@@ -557,7 +596,14 @@ export default function App() {
       }
     }
 
-    const sessionToUse = data.sessionName?.trim() || currentSessionName || 'الجلسة 1';
+    const devId = getOrCreateDeviceId();
+    const mySession = (settings.deviceSessions || []).find((s) => s.id === devId);
+    const sessionToUse =
+      data.sessionName?.trim() ||
+      mySession?.name?.trim() ||
+      currentSessionName?.trim() ||
+      loadCurrentSessionName() ||
+      'الجلسة 1';
 
     const newTx = await addTransaction({
       ...data,
@@ -743,6 +789,9 @@ export default function App() {
 
   // Settings
   const handleSaveSettings = async (newSettings: StoreSettings) => {
+    if (newSettings.themeMode) {
+      setThemeMode(newSettings.themeMode);
+    }
     await saveStoreSettings(newSettings);
 
     const devId = getOrCreateDeviceId();
@@ -815,10 +864,17 @@ export default function App() {
     }
   };
 
-  // Export CSV
-  const handleExportCSV = () => {
-    exportToCSV(debtorsWithStats, settings.currency);
-    showToast('تم تصدير كشف الحسابات بصيغة إكسل CSV بنجاح.');
+  // Export Excel & CSV
+  const handleExportCSV = async () => {
+    try {
+      const effectiveDebtors = debtors && debtors.length > 0 ? debtors : loadDebtors();
+      const effectiveTransactions = transactions && transactions.length > 0 ? transactions : loadTransactions();
+      await downloadExcelBackup(effectiveDebtors, effectiveTransactions, settings);
+      showToast('تم تصدير ملف إكسل شامل لكافة الزبائن والديون (.xlsx) بنجاح.');
+    } catch {
+      exportToCSV(debtorsWithStats, settings.currency);
+      showToast('تم تصدير كشف الحسابات بصيغة CSV بنجاح.');
+    }
   };
 
   const handleReloadAll = () => {
@@ -1490,6 +1546,10 @@ export default function App() {
         onLogout={handleLogout}
         onOpenPhoneAuth={() => setIsAuthModalOpen(true)}
         onForceSync={handleForceSync}
+        themeMode={themeMode}
+        onSetThemeMode={setThemeMode}
+        currentSessionName={currentSessionName}
+        onSetCurrentSessionName={handleSaveSessionName}
       />
 
       {/* Phone Number Authentication & Password Reset Modal */}

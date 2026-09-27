@@ -36,6 +36,19 @@
       }
     </style>
     <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('supermarket_theme');
+          var isDark = saved === 'light' ? false : (saved === 'dark' ? true : (saved === 'system' ? window.matchMedia('(prefers-color-scheme: dark)').matches : true));
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.setAttribute('data-theme', 'dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.setAttribute('data-theme', 'light');
+          }
+        } catch(e) {}
+      })();
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function(err) {
           console.log('SW registration note:', err);
