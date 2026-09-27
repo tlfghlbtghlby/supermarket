@@ -83,6 +83,8 @@ export function subscribeToTransactions(
           notes: data.notes || undefined,
           paymentMethod: data.paymentMethod,
           invoiceNumber: data.invoiceNumber,
+          groupName: data.groupName,
+          sessionName: data.sessionName,
         });
       });
       onUpdate(transactions);
@@ -192,6 +194,7 @@ export async function syncTransaction(tx: Transaction, userId: string): Promise<
     if (tx.paymentMethod) payload.paymentMethod = tx.paymentMethod;
     if (tx.invoiceNumber) payload.invoiceNumber = tx.invoiceNumber;
     if (tx.groupName) payload.groupName = tx.groupName;
+    if (tx.sessionName) payload.sessionName = tx.sessionName;
 
     await setDoc(docRef, payload, { merge: true });
   } catch (error) {

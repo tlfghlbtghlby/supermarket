@@ -16,12 +16,14 @@ import {
   HelpCircle,
   MessageCircle,
   Keyboard,
+  Tag,
 } from 'lucide-react';
 
 interface VoiceTransactionModalProps {
   isOpen: boolean;
   allDebtors: DebtorWithStats[];
   settings: StoreSettings;
+  currentSessionName?: string;
   onClose: () => void;
   onSaveTransaction: (data: {
     debtorId: string;
@@ -30,6 +32,7 @@ interface VoiceTransactionModalProps {
     description: string;
     notes?: string;
     autoOpenWhatsApp?: boolean;
+    sessionName?: string;
   }) => void;
   onOpenInStandardModal?: (data: {
     debtorId: string;
@@ -43,6 +46,7 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
   isOpen,
   allDebtors,
   settings,
+  currentSessionName,
   onClose,
   onSaveTransaction,
   onOpenInStandardModal,
@@ -153,7 +157,7 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
   const projectedBal =
     selectedType === 'DEBT'
       ? currentBal + parsedNumericAmount
-      : Math.max(0, currentBal - parsedNumericAmount);
+      : currentBal - parsedNumericAmount;
   const isDebt = selectedType === 'DEBT';
 
   const handleConfirmSave = () => {
@@ -199,6 +203,7 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
       amount: parsedNumericAmount,
       description: finalDescription,
       autoOpenWhatsApp: sendWhatsApp,
+      sessionName: currentSessionName || 'الجلسة 1',
     });
     onClose();
   };
@@ -264,6 +269,17 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Current Active Session Indicator */}
+        <div className="px-5 py-2 bg-amber-50/90 dark:bg-amber-950/40 border-b border-amber-200/80 dark:border-amber-800/60 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-1.5 text-amber-900 dark:text-amber-200 font-semibold">
+            <Tag className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span>تسجيل باسم الجلسة:</span>
+          </div>
+          <span className="font-black px-2 py-0.5 rounded-md bg-amber-200/80 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100">
+            {currentSessionName || 'الجلسة 1'}
+          </span>
         </div>
 
         {/* Listening Ambient & Mic Section */}

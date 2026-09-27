@@ -142,6 +142,46 @@ export function saveSettings(settings: StoreSettings): void {
 }
 
 // App User (Phone & Password Login)
+const CURRENT_SESSION_KEY = 'supermarket_current_session_v1';
+const SESSION_HISTORY_KEY = 'supermarket_session_history_v1';
+
+export function loadCurrentSessionName(): string {
+  try {
+    const saved = localStorage.getItem(CURRENT_SESSION_KEY);
+    return saved && saved.trim() ? saved.trim() : 'الجلسة 1';
+  } catch {
+    return 'الجلسة 1';
+  }
+}
+
+export function saveCurrentSessionName(name: string): void {
+  try {
+    const clean = name.trim() || 'الجلسة 1';
+    localStorage.setItem(CURRENT_SESSION_KEY, clean);
+
+    const history = loadSessionHistory();
+    if (!history.includes(clean)) {
+      const updated = [clean, ...history.filter((h) => h !== clean)].slice(0, 10);
+      localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(updated));
+    }
+  } catch (e) {
+    console.error('Failed to save session name', e);
+  }
+}
+
+export function loadSessionHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(SESSION_HISTORY_KEY);
+    if (!raw) return ['الجلسة 1', 'جلسة الصباح', 'جلسة المساء', 'كاشير 1'];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0
+      ? parsed
+      : ['الجلسة 1', 'جلسة الصباح', 'جلسة المساء', 'كاشير 1'];
+  } catch {
+    return ['الجلسة 1', 'جلسة الصباح', 'جلسة المساء', 'كاشير 1'];
+  }
+}
+
 export function loadAppUser(): AppUser | null {
   try {
     const raw = localStorage.getItem(APP_USER_KEY);

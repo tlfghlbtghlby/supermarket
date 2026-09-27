@@ -25,7 +25,7 @@ export const PrintStatement: React.FC<PrintStatementProps> = ({
   let running = 0;
   const txList = debtorTransactions.map((tx) => {
     if (tx.type === 'DEBT') running += tx.amount;
-    else running = Math.max(0, running - tx.amount);
+    else running = running - tx.amount;
     return { ...tx, balanceAfter: running };
   });
 
@@ -129,6 +129,11 @@ export const PrintStatement: React.FC<PrintStatementProps> = ({
                     </td>
                     <td className="p-2 border-l border-slate-200 text-slate-800 font-medium">
                       <div>{tx.description}</div>
+                      {tx.sessionName && (
+                        <span className="text-[10px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 inline-block mt-0.5 font-bold">
+                          الجلسة: {tx.sessionName}
+                        </span>
+                      )}
                       {tx.notes && (
                         <div className="text-[10px] text-amber-900 bg-amber-50/80 p-1 rounded mt-1 border border-amber-200">
                           <span className="font-bold">ملاحظة: </span>

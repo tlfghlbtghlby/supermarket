@@ -1,7 +1,23 @@
-import React from 'react';
-import { Transaction, DebtorWithStats, StoreSettings } from '../types';
-import { formatCurrency, formatDate } from '../utils/formatters';
-import { ArrowUpRight, ArrowDownLeft, Calendar, User, Wallet, FileText, Clock } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Transaction, DebtorWithStats, StoreSettings, TransactionType } from '../types';
+import { formatCurrency, formatDate, formatDateOnly } from '../utils/formatters';
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Calendar,
+  User,
+  Wallet,
+  FileText,
+  Clock,
+  Search,
+  Filter,
+  PlusCircle,
+  TrendingDown,
+  TrendingUp,
+  X,
+  ChevronDown,
+  Tag,
+} from 'lucide-react';
 
 interface RecentTransactionsListProps {
   transactions: Transaction[];
@@ -10,6 +26,8 @@ interface RecentTransactionsListProps {
   onSelectDebtor: (debtor: DebtorWithStats) => void;
   onOpenAddDebt: () => void;
   onOpenAddPayment: () => void;
+  onQuickAddDebtForDebtor?: (debtor: DebtorWithStats) => void;
+  onQuickAddPaymentForDebtor?: (debtor: DebtorWithStats) => void;
 }
 
 export const RecentTransactionsList: React.FC<RecentTransactionsListProps> = ({
@@ -17,138 +35,444 @@ export const RecentTransactionsList: React.FC<RecentTransactionsListProps> = ({
   debtors,
   settings,
   onSelectDebtor,
+  onOpenAddDebt,
+  onOpenAddPayment,
+  onQuickAddDebtForDebtor,
+  onQuickAddPaymentForDebtor,
 }) => {
-  // Sort transactions by date descending (latest first)
-  const recentTx = [...transactions]
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 10);
+  const [txTypeFilter, setTxTypeFilter] = useState<'ALL' | TransactionType>('ALL');
+  const [txSearchQuery, setTxSearchQuery] = useState('');
+  const [displayLimit, setDisplayLimit] = useState(25);
 
-  // Helper to find debtor
-  const getDebtor = (debtorId: string) => debtors.find((d) => d.id === debtorId);
+  // Helper map for fast debtor lookup
+  const debtorsMap = useMemo(() => {
+    const map = new Map<string, DebtorWithStats>();
+    debtors.forEach((d) => map.set(d.id, d));
+    return map;
+  }, [debtors]);
 
-  // Compute running balance at that moment or current balance
+  // Sort and filter transactions
+  const filteredTransactions = useMemo(() => {
+    let list = [...transactions].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+
+    // Type filter
+    if (txTypeFilter !== 'ALL') {
+      list = list.filter((tx) => tx.type === txTypeFilter);
+    }
+
+    // Search query
+    if (txSearchQuery.trim()) {
+      const q = txSearchQuery.toLowerCase().trim();
+      list = list.filter((tx) => {
+        const debtor = debtorsMap.get(tx.debtorId);
+        const nameMatch = debtor?.name.toLowerCase().includes(q);
+        const phoneMatch = debtor?.phone.includes(q);
+        const noteMatch = (tx.notes || tx.description || '').toLowerCase().includes(q);
+        const dateMatch = tx.date.includes(q);
+        const sessionMatch = (tx.sessionName || '').toLowerCase().includes(q);
+        return nameMatch || phoneMatch || noteMatch || dateMatch || sessionMatch;
+      });
+    }
+
+    return list;
+  }, [transactions, txTypeFilter, txSearchQuery, debtorsMap]);
+
+  // Group transactions by date string (YYYY-MM-DD)
+  const groupedByDate = useMemo(() => {
+    const limited = filteredTransactions.slice(0, displayLimit);
+    const groups: { [dateKey: string]: Transaction[] } = {};
+
+    limited.forEach((tx) => {
+      const dateKey = formatDateOnly(tx.date);
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(tx);
+    });
+
+    return groups;
+  }, [filteredTransactions, displayLimit]);
+
+  // Friendly date label generator
+  const getDateLabel = (dateKey: string) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+    if (dateKey === today) {
+      return 'اليوم';
+    } else if (dateKey === yesterday) {
+      return 'أمس';
+    } else {
+      try {
+        const d = new Date(dateKey);
+        return d.toLocaleDateString('ar-EG', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
+      } catch {
+        return dateKey;
+      }
+    }
+  };
+
+  // Metrics for filtered set
+  const totalDebtsSum = useMemo(() => {
+    return filteredTransactions
+      .filter((t) => t.type === 'DEBT')
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [filteredTransactions]);
+
+  const totalPaymentsSum = useMemo(() => {
+    return filteredTransactions
+      .filter((t) => t.type === 'PAYMENT')
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [filteredTransactions]);
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between px-1">
-        <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <span>اخر حركات الزبائن</span>
-        </h3>
-        <span className="text-xs text-slate-500 dark:text-slate-400">
-          أحدث {recentTx.length} حركة مسجلة
-        </span>
+    <div className="space-y-4">
+      {/* Top Filter and Search Bar for Transactions */}
+      <div className="bg-white dark:bg-[#161c2d] p-4 rounded-2xl border-2 border-slate-200 dark:border-[#27324c] shadow-2xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900 dark:text-slate-100">
+                سجل تاريخ آخر الحركات
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                عرض تفصيلي لجميع حركات الديون والمقبوضات مرتبة بالتواريخ
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Transaction Action Buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onOpenAddDebt}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>+ تسجيل دين</span>
+            </button>
+            <button
+              type="button"
+              onClick={onOpenAddPayment}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              <ArrowDownLeft className="w-3.5 h-3.5" />
+              <span>+ تسديد دفعة</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Chips & Search Input */}
+        <div className="flex flex-col md:flex-row md:items-center gap-3 pt-2 border-t border-slate-100 dark:border-[#222e48]">
+          {/* Type Filter Buttons */}
+          <div className="flex bg-slate-100 dark:bg-[#101524] p-1 rounded-xl text-xs border border-slate-200 dark:border-[#27324c] shrink-0">
+            <button
+              type="button"
+              onClick={() => setTxTypeFilter('ALL')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                txTypeFilter === 'ALL'
+                  ? 'bg-white dark:bg-[#2563eb] text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              الكل ({transactions.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTxTypeFilter('DEBT')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                txTypeFilter === 'DEBT'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'text-rose-600 dark:text-rose-400 hover:text-rose-700'
+              }`}
+            >
+              <TrendingUp className="w-3 h-3" />
+              <span>ديون فقط ({transactions.filter((t) => t.type === 'DEBT').length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTxTypeFilter('PAYMENT')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                txTypeFilter === 'PAYMENT'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700'
+              }`}
+            >
+              <TrendingDown className="w-3 h-3" />
+              <span>تسديدات فقط ({transactions.filter((t) => t.type === 'PAYMENT').length})</span>
+            </button>
+          </div>
+
+          {/* Search Input for Transactions */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="تصفية الحركات (اسم الزبون، الملاحظة، التاريخ)..."
+              value={txSearchQuery}
+              onChange={(e) => setTxSearchQuery(e.target.value)}
+              className="w-full pr-9 pl-8 py-1.5 bg-slate-50 dark:bg-[#101524] border border-slate-200 dark:border-[#27324c] rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {txSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setTxSearchQuery('')}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Small Summary Metrics */}
+        {(totalDebtsSum > 0 || totalPaymentsSum > 0) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs border-t border-slate-100 dark:border-[#222e48]">
+            <div className="flex items-center gap-4 text-slate-600 dark:text-slate-300">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-500" />
+                <span>إجمالي الديون المعروضة:</span>
+                <span className="font-bold text-rose-600 dark:text-rose-400">
+                  {formatCurrency(totalDebtsSum, settings.currency)}
+                </span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span>إجمالي المقبوضات المعروضة:</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(totalPaymentsSum, settings.currency)}
+                </span>
+              </span>
+            </div>
+            <span className="text-[11px] text-slate-400">
+              معروض {Math.min(filteredTransactions.length, displayLimit)} من أصل {filteredTransactions.length} حركة
+            </span>
+          </div>
+        )}
       </div>
 
-      {recentTx.length === 0 ? (
-        <div className="p-8 text-center bg-white dark:bg-[#151c2e] border border-slate-200 dark:border-[#27324c] rounded-2xl">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            لا توجد حركات مسجلة بعد. استخدم أزرار تسجيل الدين أو السداد لإضافة أول حركة.
+      {/* Transactions List Grouped by Date */}
+      {filteredTransactions.length === 0 ? (
+        <div className="p-12 text-center bg-white dark:bg-[#161c2d] border-2 border-slate-200 dark:border-[#27324c] rounded-2xl space-y-3">
+          <div className="w-14 h-14 bg-slate-100 dark:bg-[#101524] rounded-2xl flex items-center justify-center mx-auto text-slate-400">
+            <Clock className="w-7 h-7" />
+          </div>
+          <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">
+            لا توجد حركات مسجلة تطابق البحث
+          </h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+            يمكنك تسجيل دين جديد أو سداد دفعة نقدية لتظهر الحركات فورياً في هذا السجل التاريخي.
           </p>
+          <div className="flex items-center justify-center gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onOpenAddDebt}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>تسجيل دين جديد</span>
+            </button>
+            <button
+              type="button"
+              onClick={onOpenAddPayment}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              <ArrowDownLeft className="w-4 h-4" />
+              <span>تسجيل دفعة نقدية</span>
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="space-y-3">
-          {recentTx.map((tx) => {
-            const debtor = getDebtor(tx.debtorId);
-            const isDebt = tx.type === 'DEBT';
+        <div className="space-y-6">
+          {(Object.entries(groupedByDate) as [string, Transaction[]][]).map(([dateKey, txList]) => {
+            const dateLabel = getDateLabel(dateKey);
+            const dayDebts = txList.filter((t) => t.type === 'DEBT').reduce((s, t) => s + t.amount, 0);
+            const dayPaid = txList.filter((t) => t.type === 'PAYMENT').reduce((s, t) => s + t.amount, 0);
 
             return (
-              <div
-                key={tx.id}
-                className="bg-white dark:bg-[#161c2d] border-2 border-slate-200 dark:border-[#27324c] rounded-2xl p-4 shadow-2xs hover:border-blue-500/50 transition-all"
-              >
-                {/* Top Row: Type Tag, Amount & Date */}
-                <div className="flex items-center justify-between mb-3">
+              <div key={dateKey} className="space-y-3">
+                {/* Date Header Badge */}
+                <div className="flex items-center justify-between px-2">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold ${
-                        isDebt
-                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60'
-                          : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60'
-                      }`}
-                    >
-                      {isDebt ? 'دين' : 'تسديد'}
-                    </span>
-
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={`text-lg font-extrabold ${
-                          isDebt
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-emerald-600 dark:text-emerald-400'
-                        }`}
-                      >
-                        {formatCurrency(tx.amount, settings.currency)}
+                    <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-200 dark:bg-[#1d273f] text-slate-800 dark:text-slate-200 text-xs font-extrabold shadow-2xs">
+                      <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                      <span>{dateLabel}</span>
+                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                        ({dateKey})
                       </span>
-                      <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                          isDebt
-                            ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
-                            : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                        }`}
-                      >
-                        {isDebt ? (
-                          <ArrowUpRight className="w-4 h-4" />
-                        ) : (
-                          <ArrowDownLeft className="w-4 h-4" />
-                        )}
-                      </div>
-                    </div>
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium">
+                      {txList.length} {txList.length === 1 ? 'حركة' : 'حركات'}
+                    </span>
                   </div>
 
-                  <div className="text-xs text-slate-400 dark:text-slate-400 flex items-center gap-1" dir="ltr">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{new Date(tx.date).toISOString().slice(0, 10)}</span>
+                  {/* Day Subtotal */}
+                  <div className="hidden sm:flex items-center gap-3 text-xs">
+                    {dayDebts > 0 && (
+                      <span className="text-rose-600 dark:text-rose-400 font-bold">
+                        ديون: +{formatCurrency(dayDebts, settings.currency)}
+                      </span>
+                    )}
+                    {dayPaid > 0 && (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                        قبض: -{formatCurrency(dayPaid, settings.currency)}
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* Nested Box with details matching Screenshot 2 */}
-                <div className="bg-slate-50 dark:bg-[#101524] border border-slate-200/80 dark:border-[#1f283d] rounded-xl p-3 space-y-2 text-xs">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      <span>وقت الإضافة:</span>
-                      <span className="font-semibold" dir="ltr">
-                        {formatDate(tx.date)}
-                      </span>
-                    </div>
+                {/* List of Transactions for this Date */}
+                <div className="space-y-3">
+                  {txList.map((tx) => {
+                    const debtor = debtorsMap.get(tx.debtorId);
+                    const isDebt = tx.type === 'DEBT';
 
-                    <div className="flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-                      <span className="text-slate-500 dark:text-slate-400">الزبون:</span>
-                      {debtor ? (
-                        <button
-                          type="button"
-                          onClick={() => onSelectDebtor(debtor)}
-                          className="font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                        >
-                          {debtor.name}
-                        </button>
-                      ) : (
-                        <span className="font-semibold text-slate-700 dark:text-slate-300">غير محدد</span>
-                      )}
-                    </div>
-                  </div>
+                    return (
+                      <div
+                        key={tx.id}
+                        className="bg-white dark:bg-[#161c2d] border-2 border-slate-200 dark:border-[#27324c] hover:border-blue-500/60 dark:hover:border-blue-500/60 rounded-2xl p-4 shadow-2xs transition-all space-y-3 group"
+                      >
+                        {/* Top Row: Type Tag, Amount, and Time */}
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            {/* Type Badge */}
+                            <span
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-black ${
+                                isDebt
+                                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800/60'
+                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/60'
+                              }`}
+                            >
+                              {isDebt ? (
+                                <>
+                                  <ArrowUpRight className="w-3.5 h-3.5 text-rose-600" />
+                                  <span>دين جديد</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>تسديد دفعة</span>
+                                </>
+                              )}
+                            </span>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60 dark:border-[#1f283d]">
-                    <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-                      <Wallet className="w-3.5 h-3.5 text-slate-400" />
-                      <span>الرصيد بعد الحركة:</span>
-                      <span className="font-bold text-slate-900 dark:text-slate-100">
-                        {debtor ? formatCurrency(debtor.currentBalance, settings.currency) : '—'}
-                      </span>
-                    </div>
+                            {/* Amount */}
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`text-lg sm:text-xl font-black ${
+                                  isDebt
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-emerald-600 dark:text-emerald-400'
+                                }`}
+                              >
+                                {formatCurrency(tx.amount, settings.currency)}
+                              </span>
+                            </div>
+                          </div>
 
-                    <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-                      <FileText className="w-3.5 h-3.5 text-slate-400" />
-                      <span>الملاحظة:</span>
-                      <span className="font-medium text-slate-700 dark:text-slate-300">
-                        {tx.notes || tx.description || 'لا يوجد ملاحظات'}
-                      </span>
-                    </div>
-                  </div>
+                          {/* Session Badge & Time/Date display */}
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-black bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60 shadow-2xs"
+                              title="اسم الجلسة أو المسؤول الذي سجّل هذه الحركة"
+                            >
+                              <Tag className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                              <span>الجلسة: {tx.sessionName || 'الجلسة 1'}</span>
+                            </span>
+
+                            <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5" dir="ltr">
+                              <Clock className="w-3.5 h-3.5 text-slate-400" />
+                              <span className="font-semibold">{formatDate(tx.date).slice(11)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Details Box: Customer Name, Balance After, Note */}
+                        <div className="bg-slate-100/90 dark:bg-[#0f1424] border border-slate-300 dark:border-[#222e48] rounded-xl p-3 space-y-2 text-xs">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            {/* Debtor Button */}
+                            <div className="flex items-center gap-2">
+                              <User className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                              <span className="text-slate-800 dark:text-slate-200 font-bold">الزبون:</span>
+                              {debtor ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectDebtor(debtor)}
+                                  className="font-black text-sm text-blue-700 dark:text-blue-300 hover:underline flex items-center gap-1 cursor-pointer"
+                                  title="فتح ملف وكشف حساب الزبون"
+                                >
+                                  <span>{debtor.name}</span>
+                                  {debtor.phone && (
+                                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400" dir="ltr">
+                                      ({debtor.phone})
+                                    </span>
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="font-bold text-slate-700 dark:text-slate-300">
+                                  زبون محذوف أو غير محدد
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Debtor Balance */}
+                            {debtor && (
+                              <div className="flex items-center gap-1.5">
+                                <Wallet className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
+                                <span className="text-slate-800 dark:text-slate-200 font-bold">الرصيد المتبقي:</span>
+                                <span
+                                  className={`font-black ${
+                                    debtor.currentBalance > 0
+                                      ? 'text-rose-700 dark:text-rose-400'
+                                      : 'text-emerald-700 dark:text-emerald-400'
+                                  }`}
+                                >
+                                  {formatCurrency(debtor.currentBalance, settings.currency)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Note / Description */}
+                          <div className="flex items-start gap-2 pt-1.5 border-t border-slate-300 dark:border-[#1f283d] text-slate-800 dark:text-slate-200">
+                            <FileText className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0 mt-0.5" />
+                            <span className="font-bold text-slate-900 dark:text-slate-300 shrink-0">التفاصيل / الملاحظة:</span>
+                            <span className="font-semibold text-slate-900 dark:text-slate-100 break-words">
+                              {tx.notes || tx.description || 'لا توجد ملاحظات مسجلة على هذه الحركة'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
           })}
+
+          {/* Load More Button if transactions exceed displayLimit */}
+          {filteredTransactions.length > displayLimit && (
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setDisplayLimit((prev) => prev + 25)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-[#161c2d] border-2 border-slate-200 dark:border-[#27324c] hover:border-blue-500 text-xs font-bold text-slate-800 dark:text-slate-200 transition-colors shadow-2xs cursor-pointer"
+              >
+                <ChevronDown className="w-4 h-4" />
+                <span>عرض المزيد من الحركات السابقة ({filteredTransactions.length - displayLimit} متبقية)</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

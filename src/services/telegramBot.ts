@@ -239,12 +239,14 @@ export async function sendTelegramDebtAlert(
       ? `${Number(transaction.balanceAfter).toLocaleString()} ${currency}`
       : 'محسوب في السجل';
 
+  const sessionName = transaction.sessionName?.trim() || '';
+
   const message = `
 🔔 <b>إشعار حركة دين - ${settings.storeName || 'سوبرماركت'}</b>
 
 ${actionEmoji} <b>نوع العملية:</b> ${typeLabel}
 👤 <b>الزبون:</b> <b>${debtor.name}</b>
-${debtor.phone ? `📞 <b>الهاتف:</b> <code>${debtor.phone}</code>\n` : ''}💰 <b>المبلغ:</b> <b><code>${Number(transaction.amount).toLocaleString()} ${currency}</code></b>
+${sessionName ? `🏷️ <b>المسؤول / الجلسة:</b> <b>${sessionName}</b>\n` : ''}${debtor.phone ? `📞 <b>الهاتف:</b> <code>${debtor.phone}</code>\n` : ''}💰 <b>المبلغ:</b> <b><code>${Number(transaction.amount).toLocaleString()} ${currency}</code></b>
 💳 <b>رصيد الزبون الحالي:</b> <b><code>${balanceText}</code></b>
 ${transaction.notes ? `📝 <b>البيان / الملاحظات:</b> ${transaction.notes}\n` : ''}${transaction.invoiceNumber ? `🧾 <b>رقم الفاتورة:</b> <code>${transaction.invoiceNumber}</code>\n` : ''}⏰ <b>الوقت:</b> ${formattedTime} | ${formattedDate}
 

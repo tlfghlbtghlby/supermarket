@@ -88,7 +88,7 @@ export function computeDebtorStats(debtor: Debtor, transactions: Transaction[]):
     lastDate = trx.date;
   }
 
-  const currentBalance = Math.max(0, totalDebt - totalPaid);
+  const currentBalance = totalDebt - totalPaid;
   const isOverLimit = !!(debtor.creditLimit && currentBalance > debtor.creditLimit);
 
   return {
@@ -125,7 +125,7 @@ export function computeSupplierStats(
     lastDate = trx.date;
   }
 
-  const currentBalance = Math.max(0, totalSupply - totalPaid);
+  const currentBalance = totalSupply - totalPaid;
 
   return {
     ...supplier,

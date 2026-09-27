@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Debtor,
   StoreSettings,
@@ -35,7 +35,10 @@ import {
   loadAppUser,
   saveAppUser,
   logoutAppUser,
+  loadCurrentSessionName,
+  saveCurrentSessionName,
 } from './utils/storage';
+import { getOrCreateDeviceId } from './utils/deviceSession';
 import { Header } from './components/Header';
 import { StatsCards } from './components/StatsCards';
 import { DebtorList } from './components/DebtorList';
@@ -48,7 +51,9 @@ import { SettingsModal } from './components/SettingsModal';
 import { PrintStatement } from './components/PrintStatement';
 import { SuppliersView } from './components/SuppliersView';
 import { AuthModal } from './components/AuthModal';
+import { SessionModal } from './components/SessionModal';
 import { LoginScreen } from './components/LoginScreen';
+import { GeminiAssistantModal } from './components/GeminiAssistantModal';
 import {
   CheckCircle2,
   AlertCircle,
@@ -66,6 +71,11 @@ import {
   Check,
   LogOut,
   Mic,
+  Search,
+  ChevronLeft,
+  Wallet,
+  Clock,
+  ArrowRight,
 } from 'lucide-react';
 
 interface WhatsAppAlertPrompt {
@@ -104,8 +114,8 @@ export default function App() {
     logoutUser,
   } = useFirebaseSync();
 
-  // Active View Switcher: 'DEBTORS' vs 'DASHBOARD' vs 'SUPPLIERS'
-  const [activeView, setActiveView] = useState<'DEBTORS' | 'DASHBOARD' | 'SUPPLIERS'>('DEBTORS');
+  // Active View Switcher: 'DEBTORS' (تاريخ الحركات) vs 'CUSTOMERS' (واجهة الزبائن الكاملة) vs 'DASHBOARD' vs 'SUPPLIERS'
+  const [activeView, setActiveView] = useState<'DEBTORS' | 'CUSTOMERS' | 'DASHBOARD' | 'SUPPLIERS'>('DEBTORS');
 
   // Supplier state
   const [suppliers, setSuppliers] = useState<Supplier[]>(() => loadSuppliers());
@@ -130,15 +140,182 @@ export default function App() {
   const [quickTxType, setQuickTxType] = useState<TransactionType>('DEBT');
   const [quickTxTargetDebtor, setQuickTxTargetDebtor] = useState<DebtorWithStats | null>(null);
   const [isVoiceTxOpen, setIsVoiceTxOpen] = useState(false);
+  const [isGeminiAssistantOpen, setIsGeminiAssistantOpen] = useState(false);
 
   const [activeDebtorId, setActiveDebtorId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activePrintDebtorId, setActivePrintDebtorId] = useState<string | null>(null);
 
+  // Active Session State (تسمية الجلسة / المسؤول / الكاشير)
+  const [currentSessionName, setCurrentSessionName] = useState<string>(() => loadCurrentSessionName());
+  const [isSessionModalOpen, setIsSessionModalOpen] = useState<boolean>(false);
+
   // WhatsApp Prompt & Logout Confirm States
   const [whatsAppPrompt, setWhatsAppPrompt] = useState<WhatsAppAlertPrompt | null>(null);
   const [hasCopiedWhatsAppMsg, setHasCopiedWhatsAppMsg] = useState<boolean>(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState<boolean>(false);
+
+  // Phone/Android Hardware & Gesture Back Button Handler
+  const isPopStateRef = useRef(false);
+
+  useEffect(() => {
+    // Ensure base history state is initialized
+    if (!window.history.state) {
+      window.history.replaceState({ appRoot: true, view: 'DEBTORS' }, '');
+    }
+
+    const onPopState = () => {
+      isPopStateRef.current = true;
+
+      // Close topmost modal/overlay or return to main view
+      if (isGeminiAssistantOpen) {
+        setIsGeminiAssistantOpen(false);
+      } else if (isSessionModalOpen) {
+        setIsSessionModalOpen(false);
+      } else if (activePrintDebtorId) {
+        setActivePrintDebtorId(null);
+      } else if (isSettingsOpen) {
+        setIsSettingsOpen(false);
+      } else if (isVoiceTxOpen) {
+        setIsVoiceTxOpen(false);
+      } else if (isQuickTxOpen) {
+        setIsQuickTxOpen(false);
+      } else if (isAddDebtorOpen) {
+        setIsAddDebtorOpen(false);
+        setDebtorToEdit(null);
+      } else if (isAuthModalOpen) {
+        setIsAuthModalOpen(false);
+      } else if (activeDebtorId) {
+        setActiveDebtorId(null);
+      } else if (activeView !== 'DEBTORS') {
+        setActiveView('DEBTORS');
+      }
+
+      setTimeout(() => {
+        isPopStateRef.current = false;
+      }, 50);
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [
+    isSessionModalOpen,
+    activePrintDebtorId,
+    isSettingsOpen,
+    isVoiceTxOpen,
+    isQuickTxOpen,
+    isAddDebtorOpen,
+    isAuthModalOpen,
+    activeDebtorId,
+    activeView,
+  ]);
+
+  const handleOpenSessionModal = useCallback(() => {
+    window.history.pushState({ modal: 'session' }, '');
+    setIsSessionModalOpen(true);
+  }, []);
+
+  const handleCloseSessionModal = useCallback(() => {
+    setIsSessionModalOpen(false);
+    if (window.history.state?.modal === 'session' && !isPopStateRef.current) {
+      window.history.back();
+    }
+  }, []);
+
+  const handleSaveSessionName = useCallback((newName: string) => {
+    const clean = newName.trim() || 'الجلسة 1';
+    saveCurrentSessionName(clean);
+    setCurrentSessionName(clean);
+    showToast(`تم تعيين واعتماد الجلسة "${clean}" بنجاح.`);
+  }, []);
+
+  // View navigation helper that pushes state to history
+  const handleViewChange = useCallback(
+    (newView: 'DEBTORS' | 'CUSTOMERS' | 'DASHBOARD' | 'SUPPLIERS') => {
+      if (newView !== activeView) {
+        window.history.pushState({ view: newView }, '');
+        setActiveView(newView);
+      }
+    },
+    [activeView]
+  );
+
+  // Helper for opening debtor details with history
+  const handleSelectDebtor = useCallback((debtorId: string) => {
+    window.history.pushState({ debtorId }, '');
+    setActiveDebtorId(debtorId);
+  }, []);
+
+  const handleCloseDebtorDetail = useCallback(() => {
+    setActiveDebtorId(null);
+    if (window.history.state?.debtorId && !isPopStateRef.current) {
+      window.history.back();
+    }
+  }, []);
+
+  const handleOpenAddDebtor = useCallback((toEdit: Debtor | null = null) => {
+    setDebtorToEdit(toEdit);
+    window.history.pushState({ modal: 'addDebtor' }, '');
+    setIsAddDebtorOpen(true);
+  }, []);
+
+  const handleCloseAddDebtor = useCallback(() => {
+    setIsAddDebtorOpen(false);
+    setDebtorToEdit(null);
+    if (window.history.state?.modal === 'addDebtor' && !isPopStateRef.current) {
+      window.history.back();
+    }
+  }, []);
+
+  const handleOpenQuickTx = useCallback((type: TransactionType, target: DebtorWithStats | null = null) => {
+    setQuickTxType(type);
+    setQuickTxTargetDebtor(target);
+    window.history.pushState({ modal: 'quickTx' }, '');
+    setIsQuickTxOpen(true);
+  }, []);
+
+  const handleCloseQuickTx = useCallback(() => {
+    setIsQuickTxOpen(false);
+    if (window.history.state?.modal === 'quickTx' && !isPopStateRef.current) {
+      window.history.back();
+    }
+  }, []);
+
+  const handleOpenVoiceTx = useCallback(() => {
+    window.history.pushState({ modal: 'voiceTx' }, '');
+    setIsVoiceTxOpen(true);
+  }, []);
+
+  const handleCloseVoiceTx = useCallback(() => {
+    setIsVoiceTxOpen(false);
+    if (window.history.state?.modal === 'voiceTx' && !isPopStateRef.current) {
+      window.history.back();
+    }
+  }, []);
+
+  const handleOpenSettings = useCallback(() => {
+    window.history.pushState({ modal: 'settings' }, '');
+    setIsSettingsOpen(true);
+  }, []);
+
+  const handleCloseSettings = useCallback(() => {
+    setIsSettingsOpen(false);
+    if (window.history.state?.modal === 'settings' && !isPopStateRef.current) {
+      window.history.back();
+    }
+  }, []);
+
+  const handleOpenPrint = useCallback((id: string) => {
+    window.history.pushState({ modal: 'print', id }, '');
+    setActivePrintDebtorId(id);
+  }, []);
+
+  const handleClosePrint = useCallback(() => {
+    setActivePrintDebtorId(null);
+    if (window.history.state?.modal === 'print' && !isPopStateRef.current) {
+      window.history.back();
+    }
+  }, []);
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<{
@@ -348,6 +525,7 @@ export default function App() {
     invoiceNumber?: string;
     date: string;
     autoOpenWhatsApp?: boolean;
+    sessionName?: string;
   }) => {
     const targetDebtor = debtorsWithStats.find((d) => d.id === data.debtorId);
     const debtorName = targetDebtor?.name || 'الزبون';
@@ -355,7 +533,7 @@ export default function App() {
     const newBalance =
       data.type === 'DEBT'
         ? previousBalance + data.amount
-        : Math.max(0, previousBalance - data.amount);
+        : previousBalance - data.amount;
 
     // Strict credit limit verification
     if (
@@ -379,7 +557,12 @@ export default function App() {
       }
     }
 
-    const newTx = await addTransaction(data);
+    const sessionToUse = data.sessionName?.trim() || currentSessionName || 'الجلسة 1';
+
+    const newTx = await addTransaction({
+      ...data,
+      sessionName: sessionToUse,
+    });
 
     if (data.type === 'DEBT') {
       showToast(
@@ -396,6 +579,7 @@ export default function App() {
       sendTelegramDebtAlert(
         {
           ...(newTx || data),
+          sessionName: sessionToUse,
           balanceAfter: newBalance,
         },
         targetDebtor || {
@@ -560,7 +744,22 @@ export default function App() {
   // Settings
   const handleSaveSettings = async (newSettings: StoreSettings) => {
     await saveStoreSettings(newSettings);
-    showToast('تم حفظ إعدادات المحل والعملة والواتساب بنجاح.');
+
+    const devId = getOrCreateDeviceId();
+    const mySession = newSettings.deviceSessions?.find((s) => s.id === devId);
+    if (mySession) {
+      if (mySession.isTerminated) {
+        executeLogout();
+        showToast('تم إنهاء هذه الجلسة وتسجيل الخروج بواسطة الجهاز الرئيسي.', 'warn');
+        return;
+      }
+      if (mySession.name && mySession.name !== currentSessionName) {
+        saveCurrentSessionName(mySession.name);
+        setCurrentSessionName(mySession.name);
+      }
+    }
+
+    showToast('تم حفظ إعدادات المحل والأجهزة والجلسات بنجاح.');
   };
 
   // Auth & Cloud Sync
@@ -629,24 +828,8 @@ export default function App() {
     setAppUser(loadAppUser());
   };
 
-  const handleOfflineContinue = () => {
-    let localUser = loadAppUser();
-    if (!localUser) {
-      localUser = {
-        id: 'local_admin_' + Date.now().toString(36),
-        name: settings.ownerName || 'مدير المتجر (وضع محلي)',
-        phone: settings.phone || '07700000000',
-        role: 'ADMIN',
-        isLoggedIn: true,
-      };
-      saveAppUser(localUser);
-    }
-    setAppUser(localUser);
-    handleReloadAll();
-    showToast('تم تفعيل وضع العمل المحلي بنجاح. يمكنك إدارة الزبائن والديون والمدفوعات بأمان.');
-  };
-
-  const isAuthenticated = Boolean(user || appUser);
+  // Ensure strict authentication - guest bypass is disallowed
+  const isAuthenticated = Boolean(user || (appUser && appUser.isLoggedIn && appUser.role !== 'GUEST'));
 
   // Authentication Gates - Do not show any data before login
   if (authLoading) {
@@ -678,7 +861,6 @@ export default function App() {
           handleReloadAll();
           showToast('أهلاً بك! تم تسجيل الدخول والمزامنة بنجاح.');
         }}
-        onOfflineContinue={handleOfflineContinue}
       />
     );
   }
@@ -694,25 +876,17 @@ export default function App() {
         isSyncing={isSyncing}
         lastSyncedAt={lastSyncedAt}
         activeView={activeView}
-        onViewChange={setActiveView}
+        onViewChange={handleViewChange}
         isDark={isDark}
         onToggleTheme={toggleTheme}
-        onOpenAddDebtor={() => {
-          setDebtorToEdit(null);
-          setIsAddDebtorOpen(true);
-        }}
-        onOpenAddDebt={() => {
-          setQuickTxType('DEBT');
-          setQuickTxTargetDebtor(null);
-          setIsQuickTxOpen(true);
-        }}
-        onOpenAddPayment={() => {
-          setQuickTxType('PAYMENT');
-          setQuickTxTargetDebtor(null);
-          setIsQuickTxOpen(true);
-        }}
-        onOpenVoiceModal={() => setIsVoiceTxOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        currentSessionName={currentSessionName}
+        onOpenSessionModal={handleOpenSessionModal}
+        onOpenAddDebtor={() => handleOpenAddDebtor(null)}
+        onOpenAddDebt={() => handleOpenQuickTx('DEBT', null)}
+        onOpenAddPayment={() => handleOpenQuickTx('PAYMENT', null)}
+        onOpenVoiceModal={handleOpenVoiceTx}
+        onOpenGeminiAssistant={() => setIsGeminiAssistantOpen(true)}
+        onOpenSettings={handleOpenSettings}
         onExportCSV={handleExportCSV}
         onLogin={handleLogin}
         onLogout={handleLogout}
@@ -721,43 +895,206 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 lg:px-6 py-3 sm:py-4 space-y-3.5">
         {activeView === 'DEBTORS' ? (
-          /* View 1: الزبائن (Clear borders and dark mode matching screenshots) */
-          <DebtorList
-            debtors={filteredAndSortedDebtors}
-            transactions={transactions}
-            settings={settings}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            currentFilter={currentFilter}
-            onFilterChange={setCurrentFilter}
-            currentSort={currentSort}
-            onSortChange={setCurrentSort}
-            onSelectDebtor={(d) => setActiveDebtorId(d.id)}
-            onQuickAddDebt={(d) => {
-              setQuickTxType('DEBT');
-              setQuickTxTargetDebtor(d);
-              setIsQuickTxOpen(true);
-            }}
-            onQuickAddPayment={(d) => {
-              setQuickTxType('PAYMENT');
-              setQuickTxTargetDebtor(d);
-              setIsQuickTxOpen(true);
-            }}
-            onEditDebtor={(d) => {
-              setDebtorToEdit(d);
-              setIsAddDebtorOpen(true);
-            }}
-            onDeleteDebtor={handleDeleteDebtor}
-            onAddNewDebtor={() => {
-              setDebtorToEdit(null);
-              setIsAddDebtorOpen(true);
-            }}
-            onPrintDebtor={(d) => setActivePrintDebtorId(d.id)}
-          />
+          /* View 1: الصفحة الرئيسية (تاريخ بآخر الحركات + مربع البحث عن الزبون + مربع الزبائن) */
+          <div className="space-y-3.5 animate-in fade-in duration-200">
+            {/* مربع الزبائن: عند الضغط عليه تفتح واجهة الزبائن الكاملة */}
+            <button
+              id="btn-open-customers-view"
+              type="button"
+              onClick={() => handleViewChange('CUSTOMERS')}
+              className="w-full p-3 sm:p-3.5 rounded-xl bg-white dark:bg-[#161c2d] border border-blue-500/40 hover:border-blue-500 dark:hover:border-blue-400 text-slate-900 dark:text-slate-100 font-bold flex items-center justify-between shadow-2xs hover:shadow-xs transition-all cursor-pointer group text-right"
+            >
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm sm:text-base font-black text-blue-600 dark:text-blue-400">الزبائن</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-bold">
+                      {debtors.length} زبون
+                    </span>
+                  </div>
+                  <div className="text-xs font-normal text-slate-500 dark:text-slate-400 truncate">
+                    اضغط لفتح واجهة كافة الزبائن وكشوفاتهم
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400 text-xs font-bold shrink-0">
+                <span>عرض الكل</span>
+                <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+              </div>
+            </button>
+
+            {/* مربع البحث المخصص: للوصول للزبون بالبحث فقط */}
+            <div className="bg-white dark:bg-[#161c2d] p-3 sm:p-3.5 rounded-xl border border-slate-200 dark:border-[#27324c] shadow-2xs space-y-2.5">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400" />
+                <input
+                  id="main-debtor-search"
+                  type="text"
+                  placeholder="ابحث بالاسم أو رقم الهاتف أو العنوان للوصول للزبون مباشرة..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pr-9 pl-8 py-2 bg-slate-50 dark:bg-[#101524] border border-slate-300 dark:border-[#27324c] rounded-xl text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* نتائج البحث تظهر فقط عند كتابة نص في مربع البحث */}
+              {searchQuery.trim().length > 0 && (
+                <div className="pt-2 border-t border-slate-200 dark:border-[#243354] space-y-2">
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-1">
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">
+                      نتائج البحث عن «{searchQuery}»: ({filteredAndSortedDebtors.length} زبون)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="text-blue-600 dark:text-blue-400 hover:underline text-xs cursor-pointer"
+                    >
+                      إلغاء البحث
+                    </button>
+                  </div>
+
+                  {filteredAndSortedDebtors.length === 0 ? (
+                    <div className="p-4 text-center bg-slate-50 dark:bg-[#101524] rounded-xl border border-dashed border-slate-300 dark:border-[#27324c] space-y-2">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        لا يوجد زبون يطابق البحث «{searchQuery}».
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddDebtor(null)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>إضافة زبون جديد بهذا الاسم</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-96 overflow-y-auto p-1">
+                      {filteredAndSortedDebtors.map((debtor) => {
+                        const hasDebt = debtor.currentBalance > 0;
+                        return (
+                          <div
+                            key={debtor.id}
+                            className="p-3 bg-slate-50 dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] hover:border-blue-500 flex flex-col justify-between gap-2 transition-all shadow-2xs"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectDebtor(debtor.id)}
+                                  className="font-black text-sm text-slate-900 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 text-right truncate block cursor-pointer"
+                                >
+                                  {debtor.name}
+                                </button>
+                                <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5" dir="ltr">
+                                  {debtor.phone && <span>{debtor.phone}</span>}
+                                  {debtor.address && (
+                                    <span className="truncate max-w-[120px]" dir="rtl">
+                                      {debtor.address}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="text-left shrink-0">
+                                <span
+                                  className={`text-sm font-black ${
+                                    hasDebt
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : debtor.currentBalance < 0
+                                      ? 'text-emerald-500 dark:text-emerald-400'
+                                      : 'text-emerald-600 dark:text-emerald-400'
+                                  }`}
+                                >
+                                  {formatCurrency(debtor.currentBalance, settings.currency)}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-200/60 dark:border-[#202b44]">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectDebtor(debtor.id)}
+                                className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                              >
+                                كشف الحساب 👈
+                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenQuickTx('DEBT', debtor)}
+                                  className="px-2 py-1 bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 rounded-lg text-xs font-bold hover:bg-rose-100 cursor-pointer"
+                                >
+                                  + دين
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenQuickTx('PAYMENT', debtor)}
+                                  className="px-2 py-1 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/60 rounded-lg text-xs font-bold hover:bg-emerald-100 cursor-pointer"
+                                >
+                                  + قبض
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* تاريخ بآخر الحركات */}
+            <RecentTransactionsList
+              transactions={transactions}
+              debtors={debtorsWithStats}
+              settings={settings}
+              onSelectDebtor={(debtor) => handleSelectDebtor(debtor.id)}
+              onOpenAddDebt={() => handleOpenQuickTx('DEBT', null)}
+              onOpenAddPayment={() => handleOpenQuickTx('PAYMENT', null)}
+              onQuickAddDebtForDebtor={(debtor) => handleOpenQuickTx('DEBT', debtor)}
+              onQuickAddPaymentForDebtor={(debtor) => handleOpenQuickTx('PAYMENT', debtor)}
+            />
+          </div>
+        ) : activeView === 'CUSTOMERS' ? (
+          /* View 2: واجهة الزبائن الكاملة (Full Customers Directory View) */
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <DebtorList
+              debtors={filteredAndSortedDebtors}
+              transactions={transactions}
+              settings={settings}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              currentFilter={currentFilter}
+              onFilterChange={setCurrentFilter}
+              currentSort={currentSort}
+              onSortChange={setCurrentSort}
+              onBackToTransactions={() => handleViewChange('DEBTORS')}
+              onSelectDebtor={(debtor) => handleSelectDebtor(debtor.id)}
+              onQuickAddDebt={(d) => handleOpenQuickTx('DEBT', d)}
+              onQuickAddPayment={(d) => handleOpenQuickTx('PAYMENT', d)}
+              onEditDebtor={(d) => handleOpenAddDebtor(d)}
+              onDeleteDebtor={handleDeleteDebtor}
+              onAddNewDebtor={() => handleOpenAddDebtor(null)}
+              onPrintDebtor={(d) => handleOpenPrint(d.id)}
+            />
+          </div>
         ) : activeView === 'SUPPLIERS' ? (
-          /* View 2: ديون الموردين والشركات (Suppliers Ledger) */
+          /* View 3: ديون الموردين والشركات (Suppliers Ledger) */
           <SuppliersView
             suppliers={suppliers}
             supplierTransactions={supplierTransactions}
@@ -769,7 +1106,7 @@ export default function App() {
             onDeleteSupplierTransaction={handleDeleteSupplierTransaction}
           />
         ) : (
-          /* View 3: الصفحة الرئيسية (Dashboard with Metrics, Quick Actions & Recent Transactions) */
+          /* View 4: لوحة الإحصائيات (Dashboard) */
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Top Stat Cards */}
             <StatsCards
@@ -777,15 +1114,15 @@ export default function App() {
               settings={settings}
               onFilterActiveDebts={() => {
                 setCurrentFilter('ACTIVE_DEBT');
-                setActiveView('DEBTORS');
+                handleViewChange('CUSTOMERS');
               }}
               onFilterSettled={() => {
                 setCurrentFilter('SETTLED');
-                setActiveView('DEBTORS');
+                handleViewChange('CUSTOMERS');
               }}
               onFilterOverLimit={() => {
                 setCurrentFilter('OVER_LIMIT');
-                setActiveView('DEBTORS');
+                handleViewChange('CUSTOMERS');
               }}
             />
 
@@ -793,11 +1130,7 @@ export default function App() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  setQuickTxType('DEBT');
-                  setQuickTxTargetDebtor(null);
-                  setIsQuickTxOpen(true);
-                }}
+                onClick={() => handleOpenQuickTx('DEBT', null)}
                 className="p-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold flex items-center justify-between shadow-xs transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-3">
@@ -814,11 +1147,7 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setQuickTxType('PAYMENT');
-                  setQuickTxTargetDebtor(null);
-                  setIsQuickTxOpen(true);
-                }}
+                onClick={() => handleOpenQuickTx('PAYMENT', null)}
                 className="p-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-between shadow-xs transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-3">
@@ -1038,10 +1367,7 @@ export default function App() {
         isOpen={isAddDebtorOpen}
         debtorToEdit={debtorToEdit}
         settings={settings}
-        onClose={() => {
-          setIsAddDebtorOpen(false);
-          setDebtorToEdit(null);
-        }}
+        onClose={handleCloseAddDebtor}
         onSubmit={handleSaveDebtor}
       />
 
@@ -1050,27 +1376,14 @@ export default function App() {
         debtor={activeDebtorDetail}
         transactions={transactions}
         settings={settings}
-        onClose={() => setActiveDebtorId(null)}
-        onAddDebt={(d) => {
-          setQuickTxType('DEBT');
-          setQuickTxTargetDebtor(d);
-          setIsQuickTxOpen(true);
-        }}
-        onAddPayment={(d) => {
-          setQuickTxType('PAYMENT');
-          setQuickTxTargetDebtor(d);
-          setIsQuickTxOpen(true);
-        }}
+        onClose={handleCloseDebtorDetail}
+        onAddDebt={(d) => handleOpenQuickTx('DEBT', d)}
+        onAddPayment={(d) => handleOpenQuickTx('PAYMENT', d)}
         onDeleteTransaction={handleDeleteTransaction}
         onUpdateTransactionNotes={handleUpdateTransactionNotes}
         onUpdateTransactionGroup={handleUpdateTransactionGroup}
-        onEditDebtor={(d) => {
-          setDebtorToEdit(d);
-          setIsAddDebtorOpen(true);
-        }}
-        onPrint={(d) => {
-          setActivePrintDebtorId(d.id);
-        }}
+        onEditDebtor={(d) => handleOpenAddDebtor(d)}
+        onPrint={(d) => handleOpenPrint(d.id)}
       />
 
       {/* Quick Transaction Modal (Debt / Payment) - Rendered after DebtorDetailModal to guarantee top stacking */}
@@ -1080,13 +1393,12 @@ export default function App() {
         selectedDebtor={quickTxTargetDebtor}
         allDebtors={debtorsWithStats}
         settings={settings}
-        onClose={() => {
-          setIsQuickTxOpen(false);
-          setQuickTxTargetDebtor(null);
-        }}
+        currentSessionName={currentSessionName}
+        onChangeSession={handleOpenSessionModal}
+        onClose={handleCloseQuickTx}
         onOpenVoiceModal={() => {
-          setIsQuickTxOpen(false);
-          setIsVoiceTxOpen(true);
+          handleCloseQuickTx();
+          handleOpenVoiceTx();
         }}
         onSubmit={handleAddTransaction}
       />
@@ -1096,7 +1408,8 @@ export default function App() {
         isOpen={isVoiceTxOpen}
         allDebtors={debtorsWithStats}
         settings={settings}
-        onClose={() => setIsVoiceTxOpen(false)}
+        currentSessionName={currentSessionName}
+        onClose={handleCloseVoiceTx}
         onSaveTransaction={(data) => {
           handleAddTransaction({
             debtorId: data.debtorId,
@@ -1106,24 +1419,45 @@ export default function App() {
             notes: data.notes,
             date: new Date().toISOString(),
             autoOpenWhatsApp: data.autoOpenWhatsApp,
+            sessionName: data.sessionName || currentSessionName,
           });
         }}
         onOpenInStandardModal={(data) => {
           const found = debtorsWithStats.find((d) => d.id === data.debtorId) || null;
-          setQuickTxTargetDebtor(found);
-          setQuickTxType(data.type);
-          setIsVoiceTxOpen(false);
-          setIsQuickTxOpen(true);
+          handleCloseVoiceTx();
+          handleOpenQuickTx(data.type, found);
         }}
       />
 
-      {/* Mobile Floating Action Button for Instant Voice Debt Recording */}
+      {/* Session Naming & Switching Modal */}
+      <SessionModal
+        isOpen={isSessionModalOpen}
+        currentSession={currentSessionName}
+        onClose={handleCloseSessionModal}
+        onSaveSession={handleSaveSessionName}
+      />
+
+      {/* Gemini AI Full Assistant Modal */}
+      <GeminiAssistantModal
+        isOpen={isGeminiAssistantOpen}
+        onClose={() => setIsGeminiAssistantOpen(false)}
+        debtors={debtorsWithStats}
+        transactions={transactions}
+        settings={settings}
+        currentSessionName={currentSessionName}
+        onAddTransaction={handleAddTransaction}
+        onAddDebtor={(d) => handleSaveDebtor({ name: d.name, phone: d.phone || '' })}
+        onSelectDebtor={(debtorId) => handleSelectDebtor(debtorId)}
+        onNavigateView={(view) => handleViewChange(view)}
+      />
+
+      {/* Mobile Floating Action Button for Gemini Voice Assistant */}
       <button
         id="fab-mobile-voice-btn"
         type="button"
-        onClick={() => setIsVoiceTxOpen(true)}
-        className="lg:hidden fixed bottom-6 left-6 z-40 w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-xl shadow-purple-600/35 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
-        title="تسجيل دين بواسطة الصوت"
+        onClick={() => setIsGeminiAssistantOpen(true)}
+        className="lg:hidden fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-xl shadow-purple-600/35 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+        title="مساعد Gemini الصوتي الذكي"
       >
         <Mic className="w-6 h-6 text-amber-300" />
       </button>
@@ -1134,7 +1468,7 @@ export default function App() {
           debtor={activePrintDebtor}
           transactions={transactions}
           settings={settings}
-          onClose={() => setActivePrintDebtorId(null)}
+          onClose={handleClosePrint}
         />
       )}
 
@@ -1149,7 +1483,7 @@ export default function App() {
         isOnline={isOnline}
         isSyncing={isSyncing}
         lastSyncedAt={lastSyncedAt}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={handleCloseSettings}
         onSaveSettings={handleSaveSettings}
         onReloadData={handleReloadAll}
         onLogin={handleLogin}

@@ -37,6 +37,7 @@ import {
   MapPin,
   Bot,
   FolderPlus,
+  Tag,
 } from 'lucide-react';
 
 interface DebtorDetailModalProps {
@@ -81,6 +82,8 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
   const [selectedTxForActionModal, setSelectedTxForActionModal] = useState<
     (Transaction & { balanceAfter?: number; previousBalance?: number }) | null
   >(null);
+  const [isConfirmingDeleteTx, setIsConfirmingDeleteTx] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [groupModalTx, setGroupModalTx] = useState<
     (Transaction & { balanceAfter?: number; previousBalance?: number }) | null
   >(null);
@@ -138,7 +141,7 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
     if (tx.type === 'DEBT') {
       runningBalance += tx.amount;
     } else {
-      runningBalance = Math.max(0, runningBalance - tx.amount);
+      runningBalance = runningBalance - tx.amount;
     }
     return {
       ...tx,
@@ -171,10 +174,6 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
   };
 
   const handleSendSingleTxWhatsApp = async (tx: Transaction & { balanceAfter?: number; previousBalance?: number }) => {
-    if (!debtor.phone) {
-      alert('لا يوجد رقم هاتف مسجل لهذا الزبون.');
-      return;
-    }
     const msg = generateTransactionWhatsAppMessage({
       storeName: settings.storeName,
       debtorName: debtor.name,
@@ -187,6 +186,18 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
       date: tx.date,
     });
 
+    if (!debtor.phone) {
+      try {
+        await navigator.clipboard.writeText(msg);
+        setActionFeedback('تم نسخ تفاصيل الحركة! يمكنك لصقها وإرسالها لأي شخص عبر الواتساب.');
+        setTimeout(() => setActionFeedback(null), 3500);
+      } catch {
+        setActionFeedback('لا يوجد رقم هاتف مسجل لهذا الزبون.');
+        setTimeout(() => setActionFeedback(null), 3500);
+      }
+      return;
+    }
+
     if (settings.metaWhatsAppEnabled && settings.metaPhoneNumberId && settings.metaAccessToken) {
       const res = await sendMetaCloudMessage({
         phoneNumberId: settings.metaPhoneNumberId,
@@ -195,18 +206,22 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
         messageText: msg,
       });
       if (res.success) {
-        alert(`تم إرسال إشعار الحركة تلقائياً عبر البوت إلى الزبون ${debtor.phone}!`);
+        setActionFeedback(`تم إرسال إشعار الحركة تلقائياً عبر البوت إلى الزبون ${debtor.phone}!`);
+        setTimeout(() => setActionFeedback(null), 3500);
         return;
-      } else {
-        if (!confirm(`تعذر إرسال البوت تلقائياً: ${res.error}\nهل تود فتح الواتساب للإرسال اليدوي؟`)) {
-          return;
-        }
       }
     }
 
     const cleanPhone = cleanPhoneNumber(debtor.phone);
     if (cleanPhone) {
-      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+      const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
   };
 
@@ -534,6 +549,13 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
                             <span>{tx.groupName}</span>
                           </span>
                         )}
+                        <span
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-950/70 text-amber-300 border border-amber-800/60 flex items-center gap-1"
+                          title="الجلسة المسجلة لهذه الحركة"
+                        >
+                          <Tag className="w-2.5 h-2.5 text-amber-400" />
+                          <span>{tx.sessionName || 'الجلسة 1'}</span>
+                        </span>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -578,7 +600,7 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Middle Dark Container: الرصيد بعد الحركة + وقت الإضافة */}
+                    {/* Middle Dark Container: الرصيد بعد الحركة + وقت الإضافة + الجلسة */}
                     <div className="bg-[#0c111e] border border-[#1a243b] rounded-lg p-2.5 flex items-center justify-between text-xs">
                       <div className="text-left">
                         <div className="text-[11px] text-slate-400">الرصيد بعد الحركة</div>
@@ -588,7 +610,10 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
                       </div>
 
                       <div className="text-right">
-                        <div className="text-[11px] text-slate-400">وقت الإضافة</div>
+                        <div className="text-[11px] text-slate-400 flex items-center justify-end gap-1">
+                          <Tag className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span>الجلسة: <strong className="text-amber-300 font-bold">{tx.sessionName || 'الجلسة 1'}</strong></span>
+                        </div>
                         <div className="text-xs text-slate-200 mt-0.5 font-medium" dir="ltr">
                           {formatDate(tx.date)}
                         </div>
@@ -752,83 +777,150 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
           </div>
         )}
 
+        {/* Action Feedback Banner */}
+        {actionFeedback && (
+          <div className="absolute top-16 left-4 right-4 z-[95] p-3 rounded-xl bg-blue-600 text-white text-xs font-bold text-center shadow-2xl animate-in slide-in-from-top-2 flex items-center justify-between gap-2 border border-blue-400">
+            <span>{actionFeedback}</span>
+            <button
+              type="button"
+              onClick={() => setActionFeedback(null)}
+              className="text-white hover:text-blue-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* 1: Long-Press Action Modal (مطابق تماماً للتصميم في الصورة) */}
         {selectedTxForActionModal && (
           <div
-            className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
-            onClick={() => setSelectedTxForActionModal(null)}
+            className="fixed inset-0 z-[80] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 select-none"
+            onClick={() => {
+              setIsConfirmingDeleteTx(false);
+              setSelectedTxForActionModal(null);
+            }}
           >
             <div
-              className="bg-[#182238] border border-[#27344e] rounded-2xl w-full max-w-[280px] shadow-2xl p-6 text-center space-y-4 animate-in zoom-in-95 duration-150"
+              className="bg-[#182238] border border-[#27344e] rounded-2xl w-full max-w-[290px] shadow-2xl p-5 text-center space-y-3 animate-in zoom-in-95 duration-150"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* اضافة الى مجموعة */}
-              <button
-                type="button"
-                onClick={() => {
-                  const tx = selectedTxForActionModal;
-                  setSelectedTxForActionModal(null);
-                  setGroupModalTx(tx);
-                  setGroupNameInput(tx.groupName || '');
-                }}
-                className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-1.5 transition-colors cursor-pointer border-b border-[#222f48]/70"
-              >
-                اضافة الى مجموعة
-              </button>
+              {!isConfirmingDeleteTx ? (
+                <>
+                  {/* اضافة الى مجموعة */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const tx = selectedTxForActionModal;
+                      setSelectedTxForActionModal(null);
+                      setGroupModalTx(tx);
+                      setGroupNameInput(tx.groupName || '');
+                    }}
+                    className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-2.5 transition-colors cursor-pointer border-b border-[#222f48]/70 active:bg-blue-950/40 rounded-lg flex items-center justify-center gap-2"
+                  >
+                    <FolderPlus className="w-4 h-4" />
+                    <span>اضافة الى مجموعة</span>
+                  </button>
 
-              {/* ارسال على الواتساب */}
-              <button
-                type="button"
-                onClick={() => {
-                  const tx = selectedTxForActionModal;
-                  setSelectedTxForActionModal(null);
-                  handleSendSingleTxWhatsApp(tx);
-                }}
-                className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-1.5 transition-colors cursor-pointer border-b border-[#222f48]/70"
-              >
-                ارسال على الواتساب
-              </button>
+                  {/* ارسال على الواتساب */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const tx = selectedTxForActionModal;
+                      setSelectedTxForActionModal(null);
+                      handleSendSingleTxWhatsApp(tx);
+                    }}
+                    className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-2.5 transition-colors cursor-pointer border-b border-[#222f48]/70 active:bg-blue-950/40 rounded-lg flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-400" />
+                    <span>ارسال على الواتساب</span>
+                  </button>
 
-              {/* طباعة وصل */}
-              <button
-                type="button"
-                onClick={() => {
-                  const tx = selectedTxForActionModal;
-                  setSelectedTxForActionModal(null);
-                  setPrintReceiptTx({ ...tx, mode: 'RECEIPT' });
-                }}
-                className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-1.5 transition-colors cursor-pointer border-b border-[#222f48]/70"
-              >
-                طباعة وصل
-              </button>
+                  {/* طباعة وصل */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const tx = selectedTxForActionModal;
+                      setSelectedTxForActionModal(null);
+                      setPrintReceiptTx({ ...tx, mode: 'RECEIPT' });
+                    }}
+                    className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-2.5 transition-colors cursor-pointer border-b border-[#222f48]/70 active:bg-blue-950/40 rounded-lg flex items-center justify-center gap-2"
+                  >
+                    <Printer className="w-4 h-4 text-sky-400" />
+                    <span>طباعة وصل</span>
+                  </button>
 
-              {/* طباعة وصل استلام */}
-              <button
-                type="button"
-                onClick={() => {
-                  const tx = selectedTxForActionModal;
-                  setSelectedTxForActionModal(null);
-                  setPrintReceiptTx({ ...tx, mode: 'PAYMENT_RECEIPT' });
-                }}
-                className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-1.5 transition-colors cursor-pointer border-b border-[#222f48]/70"
-              >
-                طباعة وصل استلام
-              </button>
+                  {/* طباعة وصل استلام */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const tx = selectedTxForActionModal;
+                      setSelectedTxForActionModal(null);
+                      setPrintReceiptTx({ ...tx, mode: 'PAYMENT_RECEIPT' });
+                    }}
+                    className="w-full text-center text-[#4da2ff] hover:text-blue-300 font-bold text-base py-2.5 transition-colors cursor-pointer border-b border-[#222f48]/70 active:bg-blue-950/40 rounded-lg flex items-center justify-center gap-2"
+                  >
+                    <Receipt className="w-4 h-4 text-amber-400" />
+                    <span>طباعة وصل استلام</span>
+                  </button>
 
-              {/* حذف الحركة */}
-              <button
-                type="button"
-                onClick={() => {
-                  const txId = selectedTxForActionModal.id;
-                  setSelectedTxForActionModal(null);
-                  if (confirm('هل أنت متأكد من حذف هذه الحركة نهائياً وتحديث الرصيد؟')) {
-                    onDeleteTransaction(txId);
-                  }
-                }}
-                className="w-full text-center text-[#ef4444] hover:text-rose-400 font-bold text-base py-1.5 transition-colors cursor-pointer"
-              >
-                حذف الحركة
-              </button>
+                  {/* حذف الحركة */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsConfirmingDeleteTx(true);
+                    }}
+                    className="w-full text-center text-[#ef4444] hover:text-rose-400 font-bold text-base py-2.5 transition-colors cursor-pointer active:bg-rose-950/40 rounded-lg flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-500" />
+                    <span>حذف الحركة</span>
+                  </button>
+                </>
+              ) : (
+                /* Inline Delete Confirmation - Works 100% on Mobile / Android APK */
+                <div className="space-y-3 py-1 animate-in fade-in">
+                  <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center mx-auto">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div className="text-sm font-bold text-rose-400">
+                    هل أنت متأكد من حذف هذه الحركة نهائياً؟
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    سيتم حذفها وتحديث رصيد الزبون فورياً في السجل.
+                  </p>
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const txId = selectedTxForActionModal.id;
+                        setIsConfirmingDeleteTx(false);
+                        setSelectedTxForActionModal(null);
+                        onDeleteTransaction(txId);
+                        setActionFeedback('تم حذف الحركة بنجاح وتحديث الرصيد.');
+                        setTimeout(() => setActionFeedback(null), 3000);
+                      }}
+                      className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md active:scale-95"
+                    >
+                      تأكيد الحذف
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsConfirmingDeleteTx(false);
+                      }}
+                      className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -935,6 +1027,15 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSendSingleTxWhatsApp(printReceiptTx)}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                  title="إرسال عبر الواتساب"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">إرسال واتساب</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => window.print()}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { StoreSettings, AppUser, Debtor, Transaction } from '../types';
+import { StoreSettings, AppUser, Debtor, Transaction, DeviceSession } from '../types';
 import { User } from 'firebase/auth';
-import { resetToSampleData } from '../utils/storage';
+import { resetToSampleData, loadCurrentSessionName, saveCurrentSessionName } from '../utils/storage';
 import {
   X,
   Settings,
@@ -13,6 +13,7 @@ import {
   Moon,
   Sun,
   Laptop,
+  Smartphone,
   Shield,
   Phone,
   Send,
@@ -34,6 +35,11 @@ import {
   ArrowRight,
   MessageCircle,
   Sparkles,
+  Crown,
+  Edit2,
+  Trash2,
+  UserCheck,
+  Power,
 } from 'lucide-react';
 import {
   DEFAULT_TELEGRAM_BOT_TOKEN,
@@ -47,6 +53,10 @@ import {
   generateRandomAccountCode,
   cleanAccountCode,
 } from '../utils/accountCode';
+import {
+  getOrCreateDeviceId,
+  getInitialDeviceSessions,
+} from '../utils/deviceSession';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -65,6 +75,8 @@ interface SettingsModalProps {
   onLogout?: () => void;
   onOpenPhoneAuth?: () => void;
   onForceSync?: () => void;
+  themeMode?: 'light' | 'dark' | 'system';
+  onSetThemeMode?: (mode: 'light' | 'dark' | 'system') => void;
 }
 
 const COMMON_CURRENCIES = [
@@ -155,12 +167,155 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Accordion state: all sections are collapsed by default in normal state
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     accountCode: false,
+    devicesAndSessions: false,
     telegram: false,
     store: false,
     whatsapp: false,
     cloud: false,
     appearance: false,
   });
+
+  const currentDeviceId = getOrCreateDeviceId();
+
+  const [deviceSessions, setDeviceSessions] = useState<DeviceSession[]>(() => {
+    const currentSessionName = loadCurrentSessionName();
+    const initial = getInitialDeviceSessions(
+      settings.deviceSessions || [],
+      currentSessionName,
+      settings.mainDeviceId
+    );
+    return initial.sessions;
+  });
+
+  const [mainDeviceId, setMainDeviceId] = useState<string>(() => {
+    const currentSessionName = loadCurrentSessionName();
+    const initial = getInitialDeviceSessions(
+      settings.deviceSessions || [],
+      currentSessionName,
+      settings.mainDeviceId
+    );
+    return initial.activeMainDeviceId;
+  });
+
+  const isCurrentDeviceMain = mainDeviceId === currentDeviceId;
+
+  // Editing session name
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionName, setEditingSessionName] = useState<string>('');
+  const [sessionActionFeedback, setSessionActionFeedback] = useState<string | null>(null);
+  const [isClaimingMain, setIsClaimingMain] = useState(false);
+  const [claimPasswordInput, setClaimPasswordInput] = useState('');
+  const [claimError, setClaimError] = useState<string | null>(null);
+
+  // Non-blocking Inline UI states (for Android WebView & APK reliability)
+  const [isAddingSession, setIsAddingSession] = useState(false);
+  const [newSessionNameInput, setNewSessionNameInput] = useState('');
+  const [confirmingSetMainId, setConfirmingSetMainId] = useState<string | null>(null);
+  const [confirmingTerminateId, setConfirmingTerminateId] = useState<string | null>(null);
+
+  const handleStartRename = (session: DeviceSession) => {
+    setEditingSessionId(session.id);
+    setEditingSessionName(session.name);
+  };
+
+  const handleSaveRename = (sessionId: string) => {
+    const trimmed = editingSessionName.trim();
+    if (!trimmed) return;
+
+    setDeviceSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, name: trimmed } : s))
+    );
+
+    if (sessionId === currentDeviceId) {
+      saveCurrentSessionName(trimmed);
+    }
+
+    setEditingSessionId(null);
+    setSessionActionFeedback(`تم تعديل اسم الجلسة إلى "${trimmed}" بنجاح.`);
+    setTimeout(() => setSessionActionFeedback(null), 3000);
+  };
+
+  const handleExecuteSetMainDevice = (targetDeviceId: string) => {
+    const target = deviceSessions.find((s) => s.id === targetDeviceId);
+    if (!target) return;
+
+    setMainDeviceId(targetDeviceId);
+    setDeviceSessions((prev) =>
+      prev.map((s) => ({
+        ...s,
+        isMainDevice: s.id === targetDeviceId,
+      }))
+    );
+
+    setConfirmingSetMainId(null);
+    setSessionActionFeedback(`تم تحويل الجهاز الرئيسي إلى "${target.name}" بنجاح!`);
+    setTimeout(() => setSessionActionFeedback(null), 3500);
+  };
+
+  const handleExecuteTerminateSession = (targetDeviceId: string) => {
+    const target = deviceSessions.find((s) => s.id === targetDeviceId);
+    if (!target) return;
+
+    if (targetDeviceId === currentDeviceId) {
+      setConfirmingTerminateId(null);
+      onLogout?.();
+      return;
+    }
+
+    setDeviceSessions((prev) => prev.filter((s) => s.id !== targetDeviceId));
+    setConfirmingTerminateId(null);
+    setSessionActionFeedback(`تم تسجيل خروج الجلسة "${target.name}" بنجاح.`);
+    setTimeout(() => setSessionActionFeedback(null), 3500);
+  };
+
+  const handleConfirmAddSession = () => {
+    const trimmed = newSessionNameInput.trim();
+    if (!trimmed) return;
+
+    const newId = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6);
+    const newSession: DeviceSession = {
+      id: newId,
+      name: trimmed,
+      deviceType: 'MOBILE',
+      browserInfo: 'جلسة كاشير إضافية',
+      isMainDevice: false,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    };
+
+    setDeviceSessions((prev) => [...prev, newSession]);
+    setIsAddingSession(false);
+    setNewSessionNameInput('');
+    setSessionActionFeedback(`تمت إضافة الجلسة "${trimmed}" بنجاح.`);
+    setTimeout(() => setSessionActionFeedback(null), 3000);
+  };
+
+  const handleClaimMainDevice = () => {
+    if (!claimPasswordInput.trim()) {
+      setClaimError('يرجى إدخال الرمز السري للمتجر');
+      return;
+    }
+
+    const expectedPassword = ownerPasswordCode.trim() || '123123';
+    if (claimPasswordInput.trim() !== expectedPassword && claimPasswordInput.trim() !== '123123') {
+      setClaimError('الرمز السري غير صحيح. تعذر تحويل الجهاز الرئيسي.');
+      return;
+    }
+
+    setMainDeviceId(currentDeviceId);
+    setDeviceSessions((prev) =>
+      prev.map((s) => ({
+        ...s,
+        isMainDevice: s.id === currentDeviceId,
+      }))
+    );
+
+    setIsClaimingMain(false);
+    setClaimPasswordInput('');
+    setClaimError(null);
+    setSessionActionFeedback('تهانينا! أصبح هذا الجهاز هو الجهاز الرئيسي المخول بكافة الصلاحيات.');
+    setTimeout(() => setSessionActionFeedback(null), 4000);
+  };
 
   const toggleSection = (key: string) => {
     setOpenSections((prev) => ({
@@ -360,6 +515,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       telegramOwnerName: telegramOwnerName.trim(),
       enableTelegramAlerts,
       enableDailyMidnightReport,
+      deviceSessions,
+      mainDeviceId,
     });
     onClose();
   };
@@ -431,84 +588,90 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <form onSubmit={handleSave} className="max-w-4xl mx-auto space-y-4">
           {/* Feedback banner for copied items */}
           {copyFeedback && (
-            <div className="p-3 bg-emerald-500/15 border border-emerald-500/40 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 animate-in fade-in">
-              <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+            <div className="p-2.5 bg-emerald-500/15 border border-emerald-500/40 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 animate-in fade-in">
+              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
               <span>{copyFeedback}</span>
+            </div>
+          )}
+
+          {/* Feedback banner for session actions */}
+          {sessionActionFeedback && (
+            <div className="p-2.5 bg-blue-500/15 border border-blue-500/40 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 animate-in fade-in">
+              <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <span>{sessionActionFeedback}</span>
             </div>
           )}
 
           {/* ======================================================== */}
           {/* نافذة منسدلة 1: رمز الحساب وبيانات تسجيل الدخول */}
           {/* ======================================================== */}
-          <div className="bg-white dark:bg-[#111726] rounded-2xl border-2 border-slate-200/90 dark:border-[#1d273e] overflow-hidden shadow-xs transition-all">
+          <div className="bg-white dark:bg-[#111726] rounded-xl border border-slate-200/90 dark:border-[#1d273e] overflow-hidden shadow-2xs transition-all w-full">
             <button
               type="button"
               onClick={() => toggleSection('accountCode')}
-              className="w-full px-5 py-4 flex items-center justify-between gap-3 text-right bg-gradient-to-r from-blue-50/70 via-white to-transparent dark:from-[#131d33] dark:via-[#111726] dark:to-transparent hover:bg-blue-50/90 dark:hover:bg-[#16213a] transition-colors cursor-pointer"
+              className="w-full px-4 py-3 flex items-center justify-between gap-3 text-right bg-gradient-to-r from-blue-50/70 via-white to-transparent dark:from-[#131d33] dark:via-[#111726] dark:to-transparent hover:bg-blue-50/90 dark:hover:bg-[#16213a] transition-colors cursor-pointer"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-blue-500/20">
-                  <Key className="w-5 h-5" />
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
+                  <Key className="w-4 h-4" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                    <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
                       رمز الحساب وبيانات تسجيل الدخول
                     </h3>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                       بيانات الدخول
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     رمز الحساب، البريد الإلكتروني، والرمز السري (كلمة المرور)
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
-                <span className="text-xs font-bold hidden sm:inline text-blue-600 dark:text-blue-400">
+                <span className="text-[11px] font-bold hidden sm:inline text-blue-600 dark:text-blue-400">
                   {openSections.accountCode ? 'إغلاق الخيارات' : 'عرض الخيارات'}
                 </span>
                 <div
-                  className={`w-8 h-8 rounded-lg bg-slate-100 dark:bg-[#172033] flex items-center justify-center transition-transform duration-200 ${
+                  className={`w-7 h-7 rounded-lg bg-slate-100 dark:bg-[#172033] flex items-center justify-center transition-transform duration-200 ${
                     openSections.accountCode ? 'rotate-180 text-blue-600 dark:text-blue-400' : ''
                   }`}
                 >
-                  <ChevronDown className="w-4 h-4" />
+                  <ChevronDown className="w-3.5 h-3.5" />
                 </div>
               </div>
             </button>
 
             {openSections.accountCode && (
-              <div className="p-5 space-y-4 bg-slate-50/50 dark:bg-[#0d1320] border-t border-slate-100 dark:border-[#1d273f] animate-in fade-in duration-200">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-4 space-y-3 bg-slate-50/50 dark:bg-[#0d1320] border-t border-slate-100 dark:border-[#1d273f] animate-in fade-in duration-200">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {/* Shop Code Card */}
-                  <div className="p-3.5 bg-white dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] space-y-2 shadow-2xs">
+                  <div className="p-3 bg-white dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] space-y-1.5 shadow-2xs">
                     <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300">
                       <span className="flex items-center gap-1.5">
                         <Key className="w-3.5 h-3.5 text-blue-500" />
                         <span>رمز الحساب:</span>
                       </span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleCopyText(shopCode, 'رمز الحساب')}
-                          className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer text-[11px] font-semibold"
-                        >
-                          <Copy className="w-3 h-3" />
-                          <span>نسخ</span>
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(shopCode, 'رمز الحساب')}
+                        className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer text-[11px] font-semibold"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>نسخ</span>
+                      </button>
                     </div>
                     <div className="relative">
                       <input
                         type="text"
                         value={shopCode}
                         onChange={(e) => setShopCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-                        className="w-full text-base font-black font-mono text-blue-600 dark:text-blue-400 tracking-wider bg-slate-50 dark:bg-[#151c2e] px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#273656] focus:outline-hidden focus:border-blue-500"
+                        className="w-full text-sm font-black font-mono text-blue-600 dark:text-blue-400 tracking-wider bg-slate-50 dark:bg-[#151c2e] px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#273656] focus:outline-hidden focus:border-blue-500"
                         placeholder="GXXXXXX"
                       />
-                      <span className="absolute left-2 top-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold pointer-events-none">
+                      <span className="absolute left-2 top-1.5 text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold pointer-events-none">
                         الكود
                       </span>
                     </div>
@@ -523,7 +686,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   {/* Owner Email */}
-                  <div className="p-3.5 bg-white dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] space-y-2 shadow-2xs">
+                  <div className="p-3 bg-white dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] space-y-1.5 shadow-2xs">
                     <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300">
                       <span className="flex items-center gap-1.5">
                         <Mail className="w-3.5 h-3.5 text-slate-500" />
@@ -543,22 +706,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       dir="ltr"
                       value={ownerEmail}
                       onChange={(e) => setOwnerEmail(e.target.value)}
-                      className="w-full text-xs font-bold font-mono text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-[#151c2e] px-2.5 py-2 rounded-lg border border-slate-200 dark:border-[#273656] focus:outline-hidden focus:border-blue-500 text-left"
+                      className="w-full text-xs font-bold font-mono text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-[#151c2e] px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#273656] focus:outline-hidden focus:border-blue-500 text-left"
                       placeholder="example@gmail.com"
                     />
                     <div className="text-[10px] text-slate-400">
-                      يُستخدم لتسجيل الدخول السحابي ومزامنة بياناتك
+                      يُستخدم للدخول والمزامنة السحابية
                     </div>
                   </div>
 
                   {/* Owner Password / Security Code */}
-                  <div className="p-3.5 bg-white dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] space-y-2 shadow-2xs">
+                  <div className="p-3 bg-white dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] space-y-1.5 shadow-2xs">
                     <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300">
                       <span className="flex items-center gap-1.5">
                         <Lock className="w-3.5 h-3.5 text-amber-500" />
                         <span>الرمز السري (كلمة المرور):</span>
                       </span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => setShowOwnerPassword(!showOwnerPassword)}
@@ -582,20 +745,361 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       dir="ltr"
                       value={ownerPasswordCode}
                       onChange={(e) => setOwnerPasswordCode(e.target.value)}
-                      className="w-full text-xs font-bold font-mono text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-[#151c2e] px-2.5 py-2 rounded-lg border border-slate-200 dark:border-[#273656] focus:outline-hidden focus:border-blue-500 text-left"
+                      className="w-full text-xs font-bold font-mono text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-[#151c2e] px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#273656] focus:outline-hidden focus:border-blue-500 text-left"
                       placeholder="123123"
                     />
                     <div className="text-[10px] text-slate-400">
-                      يُستخدم لحماية حسابك والدخول من أي جهاز آخر
+                      يُستخدم لحماية الحساب وصلاحيات الجهاز الرئيسي
                     </div>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-900/60 flex items-start gap-2.5 text-xs text-blue-900 dark:text-blue-200 leading-relaxed">
-                  <Check className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
-                  <span>
-                    يمكنك تسجيل الدخول برمز الحساب <code className="font-mono font-bold bg-white dark:bg-[#12192b] px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">{activeCodeDisplay}</code> أو بالبريد الإلكتروني والرمز السري من أي جهاز آخر.
+                <div className="p-2.5 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-900/60 flex items-start gap-2 text-xs text-blue-900 dark:text-blue-200">
+                  <Check className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
+                  <span className="text-[11px]">
+                    يمكنك تسجيل الدخول برمز الحساب <code className="font-mono font-bold bg-white dark:bg-[#12192b] px-1 py-0.5 rounded border border-blue-200 dark:border-blue-800">{activeCodeDisplay}</code> أو بالبريد والرمز السري.
                   </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ======================================================== */}
+          {/* نافذة منسدلة 2: إدارة الأجهزة والجلسات النشطة (نقاط البيع والكاشير والجهاز الرئيسي) */}
+          {/* ======================================================== */}
+          <div className="bg-white dark:bg-[#111726] rounded-xl border border-slate-200/90 dark:border-[#1d273e] overflow-hidden shadow-2xs transition-all w-full">
+            <button
+              type="button"
+              onClick={() => toggleSection('devicesAndSessions')}
+              className="w-full px-4 py-3 flex items-center justify-between gap-3 text-right bg-gradient-to-r from-amber-50/70 via-white to-transparent dark:from-[#1d1911] dark:via-[#111726] dark:to-transparent hover:bg-amber-50/90 dark:hover:bg-[#1a1710] transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
+                  <Laptop className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                      إدارة الأجهزة والجلسات النشطة (الكاشير ونقاط البيع)
+                    </h3>
+                    {isCurrentDeviceMain ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
+                        <Crown className="w-3 h-3 text-amber-600" />
+                        <span>الجهاز الرئيسي</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                        جلسة فرعية
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    عرض جميع الأجهزة والجلسات، صلاحيات الجهاز الرئيسي، تعديل أسماء الجلسات، وتسجيل الخروج
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
+                <span className="text-[11px] font-bold hidden sm:inline text-amber-700 dark:text-amber-400">
+                  {openSections.devicesAndSessions ? 'إغلاق الخيارات' : `${deviceSessions.length} أجهزة متصلة`}
+                </span>
+                <div
+                  className={`w-7 h-7 rounded-lg bg-slate-100 dark:bg-[#172033] flex items-center justify-center transition-transform duration-200 ${
+                    openSections.devicesAndSessions ? 'rotate-180 text-amber-600 dark:text-amber-400' : ''
+                  }`}
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            </button>
+
+            {openSections.devicesAndSessions && (
+              <div className="p-4 space-y-3 bg-slate-50/50 dark:bg-[#0d1320] border-t border-slate-100 dark:border-[#1d273f] animate-in fade-in duration-200">
+                {/* Main device privilege status banner */}
+                {isCurrentDeviceMain ? (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Crown className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span className="font-bold">
+                          أنت الآن تستخدم <u>الجهاز الرئيسي</u> (كامل الصلاحيات): يمكنك تعديل أسماء أي جلسة، تسجيل خروج أي جهاز، أو نقل صلاحية الجهاز الرئيسي لجلسة أخرى.
+                        </span>
+                      </div>
+                      {!isAddingSession && (
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingSession(true)}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0 shadow-2xs"
+                        >
+                          + إضافة جلسة كاشير
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Inline form to add new cashier session without prompt */}
+                    {isAddingSession && (
+                      <div className="p-2.5 bg-white dark:bg-[#141b2d] border border-amber-300 dark:border-amber-700/80 rounded-xl flex items-center gap-2 animate-in fade-in">
+                        <input
+                          type="text"
+                          value={newSessionNameInput}
+                          onChange={(e) => setNewSessionNameInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleConfirmAddSession();
+                            }
+                          }}
+                          placeholder="اسم الجلسة (مثال: كاشير 2 أو جلسة المساء)..."
+                          className="flex-1 px-3 py-1.5 bg-slate-50 dark:bg-[#0e1424] border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden focus:border-amber-500"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={handleConfirmAddSession}
+                          disabled={!newSessionNameInput.trim()}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer"
+                        >
+                          إضافة
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddingSession(false);
+                            setNewSessionNameInput('');
+                          }}
+                          className="px-2.5 py-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs shrink-0 cursor-pointer"
+                        >
+                          إلغاء
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-900 dark:text-blue-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span>
+                        أنت تستخدم جهازاً فرعياً (كاشير). يمكنك طلب تحويل هذا الجهاز ليكون هو <strong>الجهاز الرئيسي</strong> بالرمز السري للمتجر.
+                      </span>
+                    </div>
+                    {!isClaimingMain ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsClaimingMain(true)}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
+                      >
+                        👑 تحويل هذا الجهاز لرئيسي
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <input
+                          type="password"
+                          dir="ltr"
+                          placeholder="الرمز السري..."
+                          value={claimPasswordInput}
+                          onChange={(e) => setClaimPasswordInput(e.target.value)}
+                          className="px-2 py-1 text-xs bg-white dark:bg-[#12192b] border border-blue-300 dark:border-blue-700 rounded-md font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleClaimMainDevice}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-bold cursor-pointer"
+                        >
+                          تأكيد
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsClaimingMain(false);
+                            setClaimError(null);
+                          }}
+                          className="px-2 py-1 text-slate-500 hover:text-slate-700 text-xs cursor-pointer"
+                        >
+                          إلغاء
+                        </button>
+                        {claimError && <span className="text-[10px] text-rose-500 font-bold block w-full">{claimError}</span>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* List of device sessions formatted as horizontal rectangular strips across the screen */}
+                <div className="space-y-2">
+                  {deviceSessions.map((s) => {
+                    const isThis = s.id === currentDeviceId;
+                    const isMain = s.id === mainDeviceId || s.isMainDevice;
+
+                    return (
+                      <div
+                        key={s.id}
+                        className={`p-3 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-2.5 w-full ${
+                          isMain
+                            ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300/80 dark:border-amber-800/60 shadow-2xs'
+                            : isThis
+                            ? 'bg-blue-50/30 dark:bg-blue-950/20 border-blue-300/70 dark:border-blue-800/50'
+                            : 'bg-white dark:bg-[#101524] border-slate-200 dark:border-[#243354]'
+                        }`}
+                      >
+                        {/* Device Info & Name */}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              isMain
+                                ? 'bg-amber-500 text-white'
+                                : isThis
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {s.deviceType === 'MOBILE' ? (
+                              <Smartphone className="w-4 h-4" />
+                            ) : (
+                              <Laptop className="w-4 h-4" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            {editingSessionId === s.id ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <input
+                                  type="text"
+                                  value={editingSessionName}
+                                  onChange={(e) => setEditingSessionName(e.target.value)}
+                                  className="px-2.5 py-1 bg-white dark:bg-[#182136] border border-blue-500 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
+                                  autoFocus
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveRename(s.id)}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer"
+                                >
+                                  حفظ الاسم
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingSessionId(null)}
+                                  className="px-2 py-1 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs cursor-pointer"
+                                >
+                                  إلغاء
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100">
+                                  {s.name}
+                                </span>
+
+                                {isMain && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
+                                    <Crown className="w-3 h-3 text-amber-600" />
+                                    <span>الجهاز الرئيسي</span>
+                                  </span>
+                                )}
+
+                                {isThis && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
+                                    هذا الجهاز الحالي
+                                  </span>
+                                )}
+
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-medium">
+                                  🟢 متصل
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+                              <span>المعلومات: {s.browserInfo}</span>
+                              <span>•</span>
+                              <span>الربط: {new Date(s.createdAt).toLocaleDateString('ar-IQ')}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action Controls for this session */}
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                          {/* تعديل الاسم: متاح للجهاز الرئيسي أو لنفس الجهاز */}
+                          {(isCurrentDeviceMain || isThis) && editingSessionId !== s.id && (
+                            <button
+                              type="button"
+                              onClick={() => handleStartRename(s)}
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-[#182136] dark:hover:bg-[#202b46] text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                              title="تعديل اسم الجلسة"
+                            >
+                              <Edit2 className="w-3 h-3 text-slate-500" />
+                              <span>تغيير الاسم</span>
+                            </button>
+                          )}
+
+                          {/* تحويل الجهاز الرئيسي للجلسة الأخرى: متاح للجهاز الرئيسي */}
+                          {isCurrentDeviceMain && !isMain && (
+                            confirmingSetMainId === s.id ? (
+                              <div className="flex items-center gap-1 bg-amber-100 dark:bg-amber-950/80 px-2 py-1 rounded-lg border border-amber-300 dark:border-amber-700 animate-in fade-in">
+                                <span className="text-[10px] font-bold text-amber-900 dark:text-amber-200">تحويل الرئيسي له؟</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleExecuteSetMainDevice(s.id)}
+                                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                >
+                                  نعم، تحويل
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmingSetMainId(null)}
+                                  className="px-1.5 py-0.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-[10px] cursor-pointer"
+                                >
+                                  إلغاء
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmingSetMainId(s.id)}
+                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700/70 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                                title="تحويل صلاحيات الجهاز الرئيسي إلى هذا الجهاز"
+                              >
+                                <Crown className="w-3 h-3 text-amber-600" />
+                                <span>تعيين كجهاز رئيسي</span>
+                              </button>
+                            )
+                          )}
+
+                          {/* تسجيل خروج الجلسة / إنهاء الاتصال */}
+                          {(isCurrentDeviceMain || isThis) && (
+                            confirmingTerminateId === s.id ? (
+                              <div className="flex items-center gap-1 bg-rose-100 dark:bg-rose-950/80 px-2 py-1 rounded-lg border border-rose-300 dark:border-rose-700 animate-in fade-in">
+                                <span className="text-[10px] font-bold text-rose-900 dark:text-rose-200">تأكيد الخروج؟</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleExecuteTerminateSession(s.id)}
+                                  className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                >
+                                  نعم، خروج
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmingTerminateId(null)}
+                                  className="px-1.5 py-0.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-[10px] cursor-pointer"
+                                >
+                                  إلغاء
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmingTerminateId(s.id)}
+                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                                title={isThis ? 'تسجيل الخروج من هذا الجهاز' : 'تسجيل خروج هذه الجلسة عن بُعد'}
+                              >
+                                <LogOut className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                                <span>{isThis ? 'تسجيل الخروج' : 'إنهاء الجلسة'}</span>
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

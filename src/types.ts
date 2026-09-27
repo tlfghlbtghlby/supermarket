@@ -15,6 +15,7 @@ export interface Transaction {
   balanceAfter?: number;
   previousBalance?: number;
   groupName?: string;
+  sessionName?: string;
 }
 
 export interface Debtor {
@@ -99,6 +100,20 @@ export interface StoreSettings {
   enableTelegramAlerts?: boolean; // إرسال إشعار فوري بكل حركة دين
   enableDailyMidnightReport?: boolean; // رفع وإرسال نسخة من الدين يومياً الساعة 12:00 صباحاً
   lastDailyMidnightReportDate?: string; // تاريخ آخر تقرير يومي
+  // إدارة الأجهزة والجلسات
+  deviceSessions?: DeviceSession[];
+  mainDeviceId?: string; // معرف الجهاز الرئيسي المخول بالصلاحيات
+}
+
+export interface DeviceSession {
+  id: string; // معرف الجهاز الفريد
+  name: string; // اسم الجلسة أو الكاشير (مثال: الجلسة 1 - الكاشير الرئيسي)
+  deviceType: 'MOBILE' | 'DESKTOP' | 'TABLET';
+  browserInfo: string; // المتصفح ونظام التشغيل
+  isMainDevice: boolean; // هل هو الجهاز الرئيسي المشرف
+  createdAt: string;
+  lastActiveAt: string;
+  isTerminated?: boolean; // هل تم تسجيل خروجه عن بُعد
 }
 
 export interface AppUser {

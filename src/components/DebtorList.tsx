@@ -22,12 +22,14 @@ import {
   QrCode,
   Plus,
   UserPlus,
+  ArrowRight,
 } from 'lucide-react';
 
 interface DebtorListProps {
   debtors: DebtorWithStats[];
   transactions?: Transaction[];
   settings: StoreSettings;
+  onBackToTransactions?: () => void;
   onSelectDebtor: (debtor: DebtorWithStats) => void;
   onQuickAddDebt: (debtor: DebtorWithStats) => void;
   onQuickAddPayment: (debtor: DebtorWithStats) => void;
@@ -47,6 +49,7 @@ export const DebtorList: React.FC<DebtorListProps> = ({
   debtors,
   transactions = [],
   settings,
+  onBackToTransactions,
   onSelectDebtor,
   onQuickAddDebt,
   onQuickAddPayment,
@@ -65,6 +68,23 @@ export const DebtorList: React.FC<DebtorListProps> = ({
 
   return (
     <div className="relative space-y-4">
+      {/* Back to Transactions Header when navigated as full view */}
+      {onBackToTransactions && (
+        <div className="flex items-center justify-between gap-3 pb-1">
+          <button
+            type="button"
+            onClick={onBackToTransactions}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-[#161c2d] hover:bg-slate-50 dark:hover:bg-[#1e273d] text-slate-800 dark:text-slate-100 text-xs sm:text-sm font-bold rounded-2xl border-2 border-slate-200 dark:border-[#27324c] shadow-2xs hover:shadow-xs transition-all cursor-pointer"
+          >
+            <ArrowRight className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span>الرجوع إلى آخر الحركات</span>
+          </button>
+          <div className="text-xs sm:text-sm font-bold text-slate-500 dark:text-slate-400">
+            دليل كافة الزبائن ({debtors.length} زبون)
+          </div>
+        </div>
+      )}
+
       {/* Top Search & Filter Bar */}
       <div className="bg-white dark:bg-[#161c2d] p-4 rounded-2xl border-2 border-slate-200 dark:border-[#27324c] shadow-2xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -93,43 +113,43 @@ export const DebtorList: React.FC<DebtorListProps> = ({
           {/* Filter Chips & Sort Controls */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Status Filter Tabs */}
-            <div className="flex bg-slate-100 dark:bg-[#101524] p-1 rounded-xl text-xs border border-slate-200 dark:border-[#27324c]">
+            <div className="flex bg-slate-200/90 dark:bg-[#101524] p-1 rounded-xl text-xs border border-slate-300 dark:border-[#27324c]">
               <button
                 onClick={() => onFilterChange('ALL')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer font-bold ${
                   currentFilter === 'ALL'
-                    ? 'bg-white dark:bg-[#2563eb] text-slate-900 dark:text-white shadow-xs font-bold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-blue-600 dark:bg-[#2563eb] text-white shadow-xs font-black'
+                    : 'text-slate-800 dark:text-slate-300 hover:text-black dark:hover:text-white'
                 }`}
               >
                 الكل ({debtors.length})
               </button>
               <button
                 onClick={() => onFilterChange('ACTIVE_DEBT')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer font-bold ${
                   currentFilter === 'ACTIVE_DEBT'
-                    ? 'bg-white dark:bg-[#2563eb] text-rose-700 dark:text-white shadow-xs font-bold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-rose-600 text-white shadow-xs font-black'
+                    : 'text-rose-700 dark:text-rose-400 hover:text-rose-900 dark:hover:text-rose-300'
                 }`}
               >
                 عليهم دين
               </button>
               <button
                 onClick={() => onFilterChange('OVER_LIMIT')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer font-bold ${
                   currentFilter === 'OVER_LIMIT'
-                    ? 'bg-white dark:bg-[#2563eb] text-amber-800 dark:text-white shadow-xs font-bold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-amber-600 text-white shadow-xs font-black'
+                    : 'text-amber-800 dark:text-amber-300 hover:text-amber-950 dark:hover:text-amber-200'
                 }`}
               >
                 متجاوز الحد
               </button>
               <button
                 onClick={() => onFilterChange('SETTLED')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer font-bold ${
                   currentFilter === 'SETTLED'
-                    ? 'bg-white dark:bg-[#2563eb] text-emerald-700 dark:text-white shadow-xs font-bold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-emerald-600 text-white shadow-xs font-black'
+                    : 'text-emerald-800 dark:text-emerald-300 hover:text-emerald-950 dark:hover:text-emerald-200'
                 }`}
               >
                 تم التسديد
@@ -137,13 +157,13 @@ export const DebtorList: React.FC<DebtorListProps> = ({
             </div>
 
             {/* Sort Dropdown */}
-            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-[#101524] border border-slate-300 dark:border-[#27324c] rounded-xl px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-300">
-              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#101524] border border-slate-300 dark:border-[#27324c] rounded-xl px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 font-bold">
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
               <select
                 id="sort-debtor-select"
                 value={currentSort}
                 onChange={(e) => onSortChange(e.target.value as DebtorSort)}
-                className="bg-transparent focus:outline-none cursor-pointer pr-1 text-xs font-medium text-slate-800 dark:text-slate-200"
+                className="bg-transparent focus:outline-none cursor-pointer pr-1 text-xs font-bold text-slate-900 dark:text-slate-100"
               >
                 <option value="HIGHEST_DEBT" className="dark:bg-[#161c2d]">أعلى دين أولاً</option>
                 <option value="LOWEST_DEBT" className="dark:bg-[#161c2d]">أقل دين أولاً</option>
@@ -218,32 +238,32 @@ export const DebtorList: React.FC<DebtorListProps> = ({
                     </div>
 
                     {/* Subtitle: Time since last debt/payment matching Screenshot 1 */}
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="font-medium">
+                    <div className="mt-1 text-xs text-slate-700 dark:text-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="font-bold">
                         {activity.text}
                       </span>
 
                       {debtor.phone && (
                         <a
                           href={`tel:${debtor.phone}`}
-                          className="inline-flex items-center gap-1 hover:text-blue-500 text-slate-400 dark:text-slate-400"
+                          className="inline-flex items-center gap-1 font-semibold hover:text-blue-600 text-slate-700 dark:text-slate-300"
                           dir="ltr"
                         >
-                          <Phone className="w-3 h-3" />
+                          <Phone className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                           <span>{debtor.phone}</span>
                         </a>
                       )}
 
                       {debtor.address && (
-                        <span className="inline-flex items-center gap-1 text-slate-400 dark:text-slate-400">
-                          <MapPin className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 font-medium">
+                          <MapPin className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0" />
                           <span className="truncate max-w-[150px]">{debtor.address}</span>
                         </span>
                       )}
                     </div>
 
                     {debtor.notes && (
-                      <p className="text-xs text-slate-400 dark:text-slate-400 mt-1 italic line-clamp-1">
+                      <p className="text-xs text-slate-800 dark:text-slate-200 mt-1 font-medium italic line-clamp-1">
                         ملاحظة: {debtor.notes}
                       </p>
                     )}
@@ -258,19 +278,27 @@ export const DebtorList: React.FC<DebtorListProps> = ({
                       <span
                         onClick={() => onSelectDebtor(debtor)}
                         className={`text-xl sm:text-2xl font-black cursor-pointer ${
-                          hasDebt
-                            ? 'text-slate-900 dark:text-slate-100'
-                            : 'text-emerald-600 dark:text-[#34d399]'
+                          debtor.currentBalance > 0
+                            ? 'text-slate-950 dark:text-white'
+                            : debtor.currentBalance < 0
+                            ? 'text-emerald-700 dark:text-emerald-400'
+                            : 'text-emerald-700 dark:text-emerald-400'
                         }`}
                       >
                         {Math.round(debtor.currentBalance || 0).toLocaleString('en-US')}
                       </span>
-                      <span className="text-xs text-slate-400 font-semibold mr-0.5">
-                        {settings.currency === 'د.ع' ? 'دينار عراقي' : (settings.currency || 'دينار عراقي')}
+                      <span className="text-xs text-slate-700 dark:text-slate-300 font-bold mr-0.5">
+                        {settings.currency === 'د.ع' ? 'د.ع' : (settings.currency || 'د.ع')}
                       </span>
                     </div>
 
-                    <div className="text-[10px] text-slate-400 dark:text-slate-500 text-left mt-0.5">
+                    {debtor.currentBalance < 0 && (
+                      <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 text-left mt-0.5">
+                        له في الذمة (دفع زيادة)
+                      </div>
+                    )}
+
+                    <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 text-left mt-0.5">
                       مشتريات: {Math.round(debtor.totalDebt || 0).toLocaleString('en-US')} | مسدد: {Math.round(debtor.totalPaid || 0).toLocaleString('en-US')}
                     </div>
                   </div>

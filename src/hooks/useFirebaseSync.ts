@@ -274,6 +274,8 @@ export function useFirebaseSync() {
       paymentMethod?: any;
       invoiceNumber?: string;
       date: string;
+      groupName?: string;
+      sessionName?: string;
     }) => {
       const newTx: Transaction = {
         id: `trx-${Date.now()}`,
@@ -284,6 +286,8 @@ export function useFirebaseSync() {
         notes: data.notes || undefined,
         paymentMethod: data.paymentMethod,
         invoiceNumber: data.invoiceNumber,
+        groupName: data.groupName,
+        sessionName: data.sessionName,
         date: data.date,
       };
 
