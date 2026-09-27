@@ -23,9 +23,51 @@ function normalizeArabicNumbers(str: string): string {
 function extractAmount(text: string): number {
   const normalized = normalizeArabicNumbers(text).replace(/,/g, '');
 
+  // Millions & quarters of millions
   if (normalized.includes('ربع مليون')) return 250000;
   if (normalized.includes('نصف مليون') || normalized.includes('نص مليون')) return 500000;
   if (normalized.includes('مليون')) return 1000000;
+
+  // Iraqi common currency terms
+  if (normalized.includes('ورقة') || normalized.includes('ورقه')) return 150000;
+  if (normalized.includes('شدة') || normalized.includes('شده')) return 1500000;
+
+  // Fractions in IQD
+  if (normalized.includes('ألفين ونص') || normalized.includes('الفين ونص')) return 2500;
+  if (normalized.includes('ألف ونص') || normalized.includes('الف ونص')) return 1500;
+  if (normalized.includes('ألف وربع') || normalized.includes('الف وربع') || normalized.includes('الف وميتين وخمسين')) return 1250;
+  if (normalized.includes('تلت ارباع') || normalized.includes('ثلاث ارباع') || normalized.includes('سبعمية وخمسين')) return 750;
+  if (normalized.includes('نص دينار') || normalized.includes('خمسمية') || normalized.includes('خمسمائة') || normalized.includes('نص الف')) return 500;
+  if (normalized.includes('ربع دينار') || normalized.includes('ميتين وخمسين') || (normalized.includes('ربع') && !normalized.includes('مليون') && !normalized.includes('اربع'))) return 250;
+
+  // Iraqi colloquial compounded thousands
+  if (normalized.includes('عشرين ألف') || normalized.includes('عشرين الف') || normalized.includes('عشرينالف')) return 20000;
+  if (normalized.includes('خمسة وعشرين ألف') || normalized.includes('خمسه وعشرين الف') || normalized.includes('خمسة وعشرينالف')) return 25000;
+  if (normalized.includes('ثلاثين ألف') || normalized.includes('تلاثين الف') || normalized.includes('تلاثينالف')) return 30000;
+  if (normalized.includes('أربعين ألف') || normalized.includes('اربعين الف') || normalized.includes('اربعينالف')) return 40000;
+  if (normalized.includes('خمسين ألف') || normalized.includes('خمسين الف') || normalized.includes('خمسينالف')) return 50000;
+  if (normalized.includes('خمسة وسبعين ألف') || normalized.includes('خمسه وسبعين الف')) return 75000;
+  if (normalized.includes('مائة ألف') || normalized.includes('مية ألف') || normalized.includes('مية الف') || normalized.includes('ميت الف')) return 100000;
+  if (normalized.includes('مية وخمسين ألف') || normalized.includes('مية وخمسين الف')) return 150000;
+
+  // Teens in Iraqi dialect
+  if (normalized.includes('خمسطعش ألف') || normalized.includes('خمسطعش الف') || normalized.includes('خمس طعش الف')) return 15000;
+  if (normalized.includes('اربعطعش ألف') || normalized.includes('اربعطعش الف') || normalized.includes('اربع طعش الف')) return 14000;
+  if (normalized.includes('تلطعش ألف') || normalized.includes('تلطعش الف') || normalized.includes('تلت طعش الف')) return 13000;
+  if (normalized.includes('طنعش ألف') || normalized.includes('طنعش الف') || normalized.includes('اثنعش الف')) return 12000;
+  if (normalized.includes('دعش ألف') || normalized.includes('دعش الف') || normalized.includes('ادعش الف')) return 11000;
+
+  // Single digit thousands in Iraqi dialect (e.g. خمستالاف / عشرتالاف)
+  if (normalized.includes('عشرة آلاف') || normalized.includes('عشر آلاف') || normalized.includes('عشرة الاف') || normalized.includes('عشرتالاف') || normalized.includes('عشرت الاف') || normalized.includes('عشرتالاف')) return 10000;
+  if (normalized.includes('تسعة آلاف') || normalized.includes('تسع آلاف') || normalized.includes('تسعة الاف') || normalized.includes('تسعتالاف') || normalized.includes('تسعت الاف')) return 9000;
+  if (normalized.includes('ثمانية آلاف') || normalized.includes('ثمان آلاف') || normalized.includes('ثمانية الاف') || normalized.includes('ثمنتالاف') || normalized.includes('ثمنطالاف')) return 8000;
+  if (normalized.includes('سبعة آلاف') || normalized.includes('سبع آلاف') || normalized.includes('سبعة الاف') || normalized.includes('سبعتالاف') || normalized.includes('سبعت الاف')) return 7000;
+  if (normalized.includes('ستة آلاف') || normalized.includes('ست آلاف') || normalized.includes('ستة الاف') || normalized.includes('ستالاف') || normalized.includes('ستت الاف')) return 6000;
+  if (normalized.includes('خمسة آلاف') || normalized.includes('خمس آلاف') || normalized.includes('خمسة الاف') || normalized.includes('خمستالاف') || normalized.includes('خمست الاف')) return 5000;
+  if (normalized.includes('أربعة آلاف') || normalized.includes('اربعة الاف') || normalized.includes('اربع آلاف') || normalized.includes('اربعتالاف') || normalized.includes('اربعت الاف')) return 4000;
+  if (normalized.includes('ثلاثة آلاف') || normalized.includes('تلاث آلاف') || normalized.includes('تلت آلاف') || normalized.includes('تلتالاف') || normalized.includes('تلاثتالاف')) return 3000;
+  if (normalized.includes('ألفين') || normalized.includes('الفين')) return 2000;
+  if (normalized.includes('ألف') || normalized.includes('الف')) return 1000;
 
   const regexWithMultiplier = /(\d+(?:\.\d+)?)\s*(ألف|الاف|الف|k|K)/i;
   const matchMult = normalized.match(regexWithMultiplier);
@@ -39,34 +81,53 @@ function extractAmount(text: string): number {
     return parseInt(digitsMatch[0], 10);
   }
 
-  if (normalized.includes('ألفين') || normalized.includes('الفين')) return 2000;
-  if (normalized.includes('ثلاثة آلاف') || normalized.includes('تلاث آلاف') || normalized.includes('تلت آلاف')) return 3000;
-  if (normalized.includes('أربعة آلاف') || normalized.includes('اربعة الاف')) return 4000;
-  if (normalized.includes('خمسة آلاف') || normalized.includes('خمس آلاف') || normalized.includes('خمسة الاف')) return 5000;
-  if (normalized.includes('عشرة آلاف') || normalized.includes('عشر آلاف') || normalized.includes('عشرة الاف')) return 10000;
-  if (normalized.includes('عشرين ألف') || normalized.includes('عشرين الف')) return 20000;
-  if (normalized.includes('ثلاثين ألف') || normalized.includes('تلاثين الف')) return 30000;
-  if (normalized.includes('أربعين ألف') || normalized.includes('اربعين الف')) return 40000;
-  if (normalized.includes('خمسين ألف') || normalized.includes('خمسين الف')) return 50000;
-  if (normalized.includes('مائة ألف') || normalized.includes('مية ألف') || normalized.includes('مية الف')) return 100000;
-  if (normalized.includes('ألف') || normalized.includes('الف')) return 1000;
-
   return 0;
 }
 
 function cleanText(str: string): string {
   return str
     .toLowerCase()
-    .replace(/[أإآ]/g, 'ا')
+    .replace(/[أإآء]/g, 'ا')
     .replace(/[ة]/g, 'ه')
     .replace(/[ى]/g, 'ي')
+    .replace(/[ؤئ]/g, 'ي')
+    .replace(/[ـ]/g, '') // strip tatweel
     .replace(/[\s\t\n]+/g, ' ')
     .trim();
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = [];
+
+  for (let i = 0; i <= m; i++) {
+    dp[i] = [i];
+  }
+  for (let j = 0; j <= n; j++) {
+    dp[0][j] = j;
+  }
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1,
+          dp[i][j - 1] + 1,
+          dp[i - 1][j - 1] + 1
+        );
+      }
+    }
+  }
+  return dp[m][n];
 }
 
 function findMatchingDebtor(text: string, debtors: any[]): any | null {
   const cleaned = cleanText(text);
 
+  // Exact substring check
   for (const debtor of debtors) {
     const dClean = cleanText(debtor.name || '');
     if (dClean && (cleaned.includes(dClean) || dClean.includes(cleaned))) {
@@ -74,17 +135,32 @@ function findMatchingDebtor(text: string, debtors: any[]): any | null {
     }
   }
 
+  // Token match with honorifics handling (حجي، سيد، ابو، ام، كاك)
   let bestMatch: any | null = null;
   let maxScore = 0;
 
   for (const debtor of debtors) {
-    const words = cleanText(debtor.name || '').split(' ').filter((w) => w.length > 2);
+    const dClean = cleanText(debtor.name || '');
+    const words = dClean.split(' ').filter((w) => w.length >= 2);
     let matchedWords = 0;
+
     for (const w of words) {
       if (cleaned.includes(w)) {
         matchedWords++;
+      } else {
+        // Check for slight typo (1 character diff)
+        const textTokens = cleaned.split(' ');
+        for (const t of textTokens) {
+          if (t.length >= 3 && Math.abs(t.length - w.length) <= 1) {
+            if (levenshteinDistance(t, w) <= 1) {
+              matchedWords += 0.9;
+              break;
+            }
+          }
+        }
       }
     }
+
     if (words.length > 0 && matchedWords > 0) {
       const score = matchedWords / words.length;
       if (score > maxScore) {
@@ -94,7 +170,7 @@ function findMatchingDebtor(text: string, debtors: any[]): any | null {
     }
   }
 
-  if (maxScore >= 0.5) {
+  if (maxScore >= 0.45) {
     return bestMatch;
   }
 
@@ -337,38 +413,83 @@ async function startServer() {
 
     try {
       const systemInstruction = `
-أنت "مساعد Gemini الذكي"، المساعد المحاسبي الذكي المتكامل داخل تطبيق دفتر ديون السوبرماركت والمحل (${storeName}).
+أنت "مساعد Gemini الذكي"، أقوى وأذكى خبير محاسبي رقمي فوري في العراق، مدمج داخل تطبيق دفتر ديون السوبرماركت والمحل (${storeName}).
 الجلسة الحالية: ${sessionName}.
 العملة المستخدمة: ${currency}.
-إجمالي الديون الحالية المسجلة: ${totalDebt} ${currency}.
+إجمالي الديون الحالية: ${totalDebt} ${currency}.
 عدد الزبائن: ${debtors.length}.
 
-قائمة الزبائن وحساباتهم الحالية:
-${JSON.stringify(debtors.slice(0, 50).map((d: any) => ({ id: d.id, name: d.name, balance: d.currentBalance, phone: d.phone })))}
+قائمة الزبائن المسجلين لديك وحساباتهم (استخدمها للتطابق وتصحيح الأخطاء الإملائية):
+${JSON.stringify(debtors.slice(0, 80).map((d: any) => ({ id: d.id, name: d.name, balance: d.currentBalance, phone: d.phone })))}
 
 آخر الحركات:
-${JSON.stringify(recentTransactions.slice(0, 10).map((t: any) => ({ type: t.type, amount: t.amount, debtorName: t.debtorName, description: t.description, date: t.date })))}
+${JSON.stringify(recentTransactions.slice(0, 15).map((t: any) => ({ type: t.type, amount: t.amount, debtorName: t.debtorName, description: t.description, date: t.date })))}
 
-دورك ومهامك:
-1. الإجابة بذكاء ودقة واحترافية وبلهجة عراقية أو عربية ودودة ومباشرة عن أي استفسار مالي أو تفاصيل حسابات الزبائن والديون والمدفوعات.
-2. تنفيذ الأوامر داخل البرنامج عند طلب المستخدم ذلك:
-   - إضافة دين: إذا طلب المستخدم تسجيل دين، مثل: "سجل 1000 دينار على حجي هادي" أو "سجل دين على أحمد 15000".
-   - تسديد دفعة: إذا طلب تسديد أو قبض، مثل: "سدد 5000 من حساب محمد".
-   - إضافة زبون جديد: مثل: "أضف زبون جديد اسمه كمال".
-   - الاستعلام والبحث: كشف حساب زبون معين، أو إعطاء ملخص مالي كامل.
-3. الرد بصيغة JSON حصراً بالشكل التالي:
+قواعد الذكاء الخارق وفهم اللهجة العامية العراقية وتصحيح الأخطاء:
+1. تصحيح الأخطاء الإملائية والصوتية الناتجة عن الميكروفون:
+   - المستخدم يتحدث صوتياً وغالباً ما ينتج عن الميكروفون أخطاء هجائية أو تلاصق كلمات، مثل:
+     * "حجهادي" أو "حجي هدي" أو "حجي عادي" -> طابقها فوراً مع الزبون "حجي هادي" وصحح الاسم.
+     * "قرار" أو "كرام" -> طابقها مع "كرار".
+     * "علوي" أو "على وي" -> طابقها مع "علاوي" أو "علي".
+     * "ابوفهد" أو "بوفهد" -> "ابو فهد".
+     * "سيدمرتضى" -> "سيد مرتضى".
+   - دائماً ابحث في قائمة الزبائن المعطاة أعلاه واختر الزبون الأقرب صوتياً وهجائياً. إذا تطابق مع زبون، ضع معرّفه (debtorId) واسمه الدقيق المكتمل.
+
+2. فهم عميق لمصطلحات وأرقام العامية العراقية:
+   - مفردات الديون: "سجل عليه"، "قيد عليه"، "اطلب فلان"، "اخذ بالدين"، "اخذ مسواك"، "شال بـ"، "كتب عليه"، "بقى يطلب"، "اخذ غراض وما دفع".
+   - مفردات التسديد والدفع: "انطاني"، "جاب لي"، "سدد"، "واصل"، "قبضت منه"، "دفع"، "نزل من حسابه"، "صفّى حسابه"، "جاب دفعة"، "حط بحسابه".
+   - الأرقام العراقية:
+     * "ربع" = 250
+     * "نص" = 500
+     * "تلت ارباع" = 750
+     * "ألف / الف" = 1000
+     * "ألف وربع / الف و250" = 1250
+     * "ألف ونص" = 1500
+     * "ألفين" = 2000
+     * "ألفين ونص" = 2500
+     * "تلت آلاف / تلاث الاف / تلتالاف" = 3000
+     * "أربعة آلاف / اربعتالاف" = 4000
+     * "خمسة آلاف / خمس الاف / خمستالاف" = 5000
+     * "ست آلاف / ستالاف" = 6000
+     * "سبع آلاف / سبعتالاف" = 7000
+     * "ثمان آلاف / ثمنتالاف" = 8000
+     * "تسع آلاف / تسعتالاف" = 9000
+     * "عشرة آلاف / عشر الاف / عشرتالاف" = 10000
+     * "دعش ألف" = 11000
+     * "طنعش ألف / اثنعش الف" = 12000
+     * "تلطعش ألف" = 13000
+     * "اربعطعش ألف" = 14000
+     * "خمسطعش ألف / خمس طعش" = 15000
+     * "عشرين ألف" = 20000
+     * "خمسة وعشرين ألف" = 25000
+     * "ثلاثين ألف / تلاثين الف" = 30000
+     * "أربعين ألف" = 40000
+     * "خمسين ألف" = 50000
+     * "خمسة وسبعين ألف" = 75000
+     * "مية ألف / مية الف" = 100000
+     * "مية وخمسين ألف" = 150000
+     * "ورقة" = 150000
+     * "مليون" = 1000000
+
+3. استخراج تفاصيل المواد (الوصف):
+   - إذا ذكر المستخدم مواد مشتراة (مثل: "سجل على حجي هادي 5000 مسواك خضرة ودجاج" أو "كرار اخذ كارت أثير بـ 10 الاف"):
+     استخرج المواد بدقة واجعلها في حقل "description".
+
+4. الرد بأسلوب عراقي لبق وودود ومحترم ("تدلل عيوني"، "حاضر من عيوني"، "تم التعرف بدقة"، "تفضل") مع إظهار الملاحظة الذكية وقوة الفهم.
+
+5. الإرجاع بصيغة JSON حصراً:
 {
-  "reply": "الرسالة النصية التي ستقرأها وتجيب بها المستخدم بوضوح وبلهجة محترمة ومفيدة",
-  "action": null أو كائن يحتوي على الأمر المطلوب تنفيذه:
-    - في حال إضافة دين:
-      {"type": "ADD_DEBT", "debtorId": "معرف الزبون إن وجد", "debtorName": "اسم الزبون", "amount": 1000, "description": "تسجيل دين عبر مساعد Gemini"}
-    - في حال تسديد دفعة:
-      {"type": "ADD_PAYMENT", "debtorId": "معرف الزبون إن وجد", "debtorName": "اسم الزبون", "amount": 5000, "description": "تسديد دفعة عبر مساعد Gemini"}
-    - في حال إضافة زبون:
-      {"type": "ADD_DEBTOR", "name": "اسم الزبون", "phone": "رقم الهاتف إن وجد"}
-    - في حال فتح كشف حساب:
+  "reply": "الرد النصي الذكي والواضح للمستخدم بالعامية العراقية المهذبة وتأكيد ما تم فهمه والملاحظة الذكية",
+  "action": null أو كائن يحتوي على:
+    - إضافة دين:
+      {"type": "ADD_DEBT", "debtorId": "معرف الزبون إن وجد في القائمة", "debtorName": "اسم الزبون الصحيح بعد التصحيح", "amount": 5000, "description": "وصف المواد إن ذكرت"}
+    - تسديد دفعة:
+      {"type": "ADD_PAYMENT", "debtorId": "معرف الزبون إن وجد", "debtorName": "اسم الزبون", "amount": 10000, "description": "تسديد دفعة واصلة"}
+    - إضافة زبون جديد:
+      {"type": "ADD_DEBTOR", "name": "اسم الزبون", "phone": "رقم هاتفه إن ذكره"}
+    - فتح كشف حساب:
       {"type": "VIEW_DEBTOR", "debtorId": "معرف الزبون", "debtorName": "اسم الزبون"}
-    - في حال التنقل في التطبيق:
+    - ملاحة:
       {"type": "NAVIGATE", "view": "CUSTOMERS" أو "DEBTORS" أو "DASHBOARD"}
 }
       `.trim();

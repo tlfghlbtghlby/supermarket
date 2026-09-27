@@ -1,4 +1,5 @@
-// Speech recognition utility supporting Web Speech API with Arabic (ar-SA / ar-IQ)
+// Speech recognition utility supporting Web Speech API with Arabic (ar-IQ / ar-SA)
+// Supports non-stop continuous listening until user explicitly stops it by clicking the button again.
 
 export interface SpeechRecognitionResultItem {
   transcript: string;
@@ -17,12 +18,12 @@ export class AppSpeechRecognizer {
   private recognition: any = null;
   private isListening: boolean = false;
   private isStarting: boolean = false;
-  // ar-SA is universal across all Android and iOS devices, handles all Arabic dialects
-  private currentLang: string = 'ar-SA';
+  // Default to ar-IQ for Iraqi dialect recognition, fallback gracefully to ar-SA
+  private currentLang: string = 'ar-IQ';
   private callbacks: SpeechRecognizerCallbacks | null = null;
   private userRequestedStop: boolean = false;
-  private autoRestartCount: number = 0;
-  private maxAutoRestarts: number = 2;
+  private accumulatedFinalText: string = '';
+  private restartTimer: any = null;
 
   public static isSupported(): boolean {
     if (typeof window === 'undefined') return false;
@@ -31,7 +32,7 @@ export class AppSpeechRecognizer {
     );
   }
 
-  public setLanguage(lang: string = 'ar-SA') {
+  public setLanguage(lang: string = 'ar-IQ') {
     this.currentLang = lang;
     if (this.recognition) {
       try {
@@ -45,7 +46,12 @@ export class AppSpeechRecognizer {
   public async start(callbacks: SpeechRecognizerCallbacks) {
     this.callbacks = callbacks;
     this.userRequestedStop = false;
-    this.autoRestartCount = 0;
+    this.accumulatedFinalText = '';
+
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
 
     if (!AppSpeechRecognizer.isSupported()) {
       callbacks.onError?.('متصفحك لا يدعم التعرف الصوتي المباشر. يرجى استخدام متصفح Google Chrome أو Microsoft Edge.');
@@ -59,69 +65,75 @@ export class AppSpeechRecognizer {
     if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Immediately release tracks after permission verification
         stream.getTracks().forEach((track) => track.stop());
       } catch (permErr: any) {
         if (permErr?.name === 'NotAllowedError' || permErr?.name === 'PermissionDeniedError') {
           this.callbacks?.onError?.('تم حظر الوصول إلى الميكروفون. يرجى السماح بالصلاحية من إعدادات المتصفح.');
           return;
         }
-        // Continue if it was just a transient warning
       }
     }
 
-    this.initAndStart();
+    this.playChime('start');
+    this.initAndStart(false);
   }
 
-  private initAndStart() {
+  private initAndStart(isSilentRestart: boolean = false) {
+    if (this.userRequestedStop) return;
+
     try {
       const SpeechRecognition =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
       if (!SpeechRecognition) {
-        this.callbacks?.onError?.('التعرف الصوتي غير متوفر في هذا المتصفح.');
+        if (!isSilentRestart) {
+          this.callbacks?.onError?.('التعرف الصوتي غير متوفر في هذا المتصفح.');
+        }
         return;
       }
 
+      this.cleanupCurrentInstance();
+
       const instance = new SpeechRecognition();
 
-      // Mobile Chrome/WebKit crashes or closes the speech popup immediately if continuous=true
-      // We set continuous=false for mobile/broad compatibility, and handle phrase completion
-      const isMobile = typeof navigator !== 'undefined' && 
-        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
-
-      instance.continuous = !isMobile;
+      instance.continuous = true;
       instance.interimResults = true;
-      instance.maxAlternatives = 1;
+      instance.maxAlternatives = 3;
       instance.lang = this.currentLang;
 
       instance.onstart = () => {
         this.isStarting = false;
         this.isListening = true;
-        this.playChime('start');
-        this.callbacks?.onStart?.();
+        if (!isSilentRestart) {
+          this.callbacks?.onStart?.();
+        }
       };
 
       instance.onresult = (event: any) => {
         let interimTranscript = '';
-        let finalTranscript = '';
-        let confidence = 0.9;
+        let newlyFinalChunk = '';
+        let confidence = 0.95;
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const res = event.results[i];
           if (res.isFinal) {
-            finalTranscript += res[0].transcript;
-            confidence = res[0].confidence || 0.9;
+            newlyFinalChunk += ' ' + res[0].transcript;
+            confidence = res[0].confidence || 0.95;
           } else {
-            interimTranscript += res[0].transcript;
+            interimTranscript += ' ' + res[0].transcript;
           }
         }
 
-        const transcript = (finalTranscript || interimTranscript).trim();
-        if (transcript && this.callbacks?.onResult) {
+        if (newlyFinalChunk.trim()) {
+          this.accumulatedFinalText = (this.accumulatedFinalText + ' ' + newlyFinalChunk).replace(/\s+/g, ' ').trim();
+        }
+
+        const fullCombined = (this.accumulatedFinalText + ' ' + interimTranscript).replace(/\s+/g, ' ').trim();
+
+        if (fullCombined && this.callbacks?.onResult) {
           this.callbacks.onResult({
-            transcript,
-            isFinal: Boolean(finalTranscript),
+            transcript: fullCombined,
+            isFinal: false, // We keep listening continuous until user clicks button again
             confidence,
           });
         }
@@ -129,47 +141,49 @@ export class AppSpeechRecognizer {
 
       instance.onerror = (event: any) => {
         const error = event.error;
-        console.warn('Speech recognition error event:', error);
+        console.warn('Speech recognition status event:', error);
 
         if (this.userRequestedStop || error === 'aborted') {
           return;
         }
 
+        // 'no-speech' is common when user pauses to think; do not abort, just quietly keep listening
         if (error === 'no-speech') {
-          // If no speech heard on mobile, we don't treat it as a hard crash
-          if (!this.userRequestedStop && this.autoRestartCount < this.maxAutoRestarts) {
-            this.autoRestartCount++;
-            return;
-          }
-          this.callbacks?.onError?.('لم يتم سماع أي صوت. انقر وتحدث بصوت واضح بالقرب من الميكروفون.');
           return;
         }
 
         if (error === 'not-allowed' || error === 'permission-denied') {
+          this.userRequestedStop = true;
           this.callbacks?.onError?.('يرجى السماح بصلاحية الميكروفون من قفل الموقع بأعلى المتصفح.');
           return;
         }
 
         if (error === 'audio-capture') {
+          this.userRequestedStop = true;
           this.callbacks?.onError?.('لم يتم العثور على ميكروفون يعمل أو أنه قيد الاستخدام في تطبيق آخر.');
           return;
         }
 
         if (error === 'network') {
-          this.callbacks?.onError?.('تعذر الاتصال بخدمة التعرف الصوتي. يرجى التحقق من اتصال الإنترنت.');
+          console.warn('Network issue during speech recognition, will retry');
           return;
         }
-
-        this.callbacks?.onError?.(`تنبيه التعرف الصوتي: ${error}`);
       };
 
       instance.onend = () => {
-        const wasActive = this.isListening || this.isStarting;
         this.isListening = false;
         this.isStarting = false;
 
-        if (wasActive && !this.userRequestedStop) {
-          this.playChime('stop');
+        // CRITICAL: Continuous listening until the user clicks the button again!
+        // Browsers close recognition after periods of silence. We seamlessly resume if user has not stopped it.
+        if (!this.userRequestedStop && this.callbacks) {
+          if (this.restartTimer) clearTimeout(this.restartTimer);
+          this.restartTimer = setTimeout(() => {
+            if (!this.userRequestedStop && this.callbacks) {
+              this.initAndStart(true);
+            }
+          }, 80);
+          return;
         }
 
         this.callbacks?.onEnd?.();
@@ -183,21 +197,44 @@ export class AppSpeechRecognizer {
       } catch (err: any) {
         this.isStarting = false;
         this.isListening = false;
-        console.warn('Recognition start exception caught:', err?.message || err);
-        this.cleanupCurrentInstance();
-        this.callbacks?.onError?.('تعذر بدء التعرف الصوتي. انقر مجدداً للتحدث.');
+        console.warn('Speech restart note:', err?.message || err);
+        // If start failed because it was already running, just wait
+        if (!this.userRequestedStop) {
+          if (this.restartTimer) clearTimeout(this.restartTimer);
+          this.restartTimer = setTimeout(() => {
+            if (!this.userRequestedStop) this.initAndStart(true);
+          }, 200);
+        }
       }
     } catch (e: any) {
       this.isStarting = false;
       this.isListening = false;
       console.warn('Failed to initialize speech recognition:', e);
-      this.callbacks?.onError?.('تعذر تشغيل الميكروفون.');
+      if (!isSilentRestart) {
+        this.callbacks?.onError?.('تعذر تشغيل الميكروفون.');
+      }
     }
   }
 
-  public stop() {
+  public stop(): string {
     this.userRequestedStop = true;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    const finalResult = this.accumulatedFinalText.trim();
     this.cleanupCurrentInstance();
+    this.playChime('stop');
+    this.callbacks?.onEnd?.();
+    return finalResult;
+  }
+
+  public getAccumulatedText(): string {
+    return this.accumulatedFinalText.trim();
+  }
+
+  public reset() {
+    this.accumulatedFinalText = '';
   }
 
   private cleanupCurrentInstance() {
@@ -213,7 +250,8 @@ export class AppSpeechRecognizer {
       rec.onend = null;
 
       try {
-        rec.abort();
+        rec.stop?.();
+        rec.abort?.();
       } catch (e) {
         // ignore
       }
