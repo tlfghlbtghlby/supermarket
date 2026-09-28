@@ -36,7 +36,11 @@ import {
   saveCurrentSessionName,
 } from '../utils/storage';
 import { generateUniqueAccountCode } from '../utils/accountCode';
-import { getInitialDeviceSessions, getOrCreateDeviceId } from '../utils/deviceSession';
+import {
+  getInitialDeviceSessions,
+  getOrCreateDeviceId,
+  saveLocalDeviceSessions,
+} from '../utils/deviceSession';
 
 export function useFirebaseSync() {
   const [user, setUser] = useState<User | null>(null);
@@ -149,17 +153,19 @@ export function useFirebaseSync() {
                 ? cloudSettings.shopCode
                 : generateUniqueAccountCode(user.uid);
 
+            const localSessionName = loadCurrentSessionName();
             const currentDeviceId = getOrCreateDeviceId();
             const cloudSessionForMe = (cloudSettings.deviceSessions || []).find(
               (s) => s.id === currentDeviceId
             );
 
-            // If cloud has an assigned name for THIS device (e.g. "father"), use it!
-            const localSessionName = loadCurrentSessionName();
-            const baseSessionName =
-              cloudSessionForMe && cloudSessionForMe.name && cloudSessionForMe.name.trim()
-                ? cloudSessionForMe.name.trim()
-                : localSessionName;
+            // Determine base session name: prefer custom local session name if it was explicitly updated
+            let baseSessionName = localSessionName;
+            if (cloudSessionForMe && cloudSessionForMe.name && cloudSessionForMe.name.trim()) {
+              if (localSessionName === 'الجلسة 1' || !localSessionName) {
+                baseSessionName = cloudSessionForMe.name.trim();
+              }
+            }
 
             const sessionInit = getInitialDeviceSessions(
               cloudSettings.deviceSessions || [],
@@ -183,13 +189,20 @@ export function useFirebaseSync() {
             };
             setSettings(mergedSettings);
             saveSettings(mergedSettings);
+            saveLocalDeviceSessions(sessionInit.sessions);
 
             const wasDevicePresent = (cloudSettings.deviceSessions || []).some(
               (s) => s.id === sessionInit.currentDeviceId
             );
 
-            // Persist if new device joined or unique code was missing
-            if (!wasDevicePresent || !cloudSettings.shopCode || cloudSettings.shopCode === 'G781011') {
+            // Check if any session name was updated locally compared to cloud
+            const sessionsDifferFromCloud = (sessionInit.sessions || []).some((s) => {
+              const cloudS = (cloudSettings.deviceSessions || []).find((cs) => cs.id === s.id);
+              return !cloudS || cloudS.name !== s.name;
+            });
+
+            // Persist if new device joined, unique code was missing, or sessions differ
+            if (!wasDevicePresent || !cloudSettings.shopCode || cloudSettings.shopCode === 'G781011' || sessionsDifferFromCloud) {
               syncStoreSettings(mergedSettings, user.uid).catch(() => {});
             }
           } else {
@@ -422,6 +435,9 @@ export function useFirebaseSync() {
     async (newSettings: StoreSettings) => {
       setSettings(newSettings);
       saveSettings(newSettings);
+      if (newSettings.deviceSessions) {
+        saveLocalDeviceSessions(newSettings.deviceSessions);
+      }
 
       if (user) {
         try {

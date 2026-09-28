@@ -1,6 +1,7 @@
 import { DeviceSession } from '../types';
 
 const DEVICE_ID_KEY = 'supermarket_device_id_v1';
+const DEVICE_SESSIONS_STORAGE_KEY = 'supermarket_device_sessions_v1';
 
 export function getOrCreateDeviceId(): string {
   try {
@@ -12,6 +13,25 @@ export function getOrCreateDeviceId(): string {
     return id;
   } catch {
     return 'dev_temp_' + Date.now();
+  }
+}
+
+export function loadSavedDeviceSessions(): DeviceSession[] {
+  try {
+    const raw = localStorage.getItem(DEVICE_SESSIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalDeviceSessions(sessions: DeviceSession[]): void {
+  try {
+    localStorage.setItem(DEVICE_SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+  } catch (e) {
+    console.error('Failed to save device sessions locally', e);
   }
 }
 
@@ -75,7 +95,39 @@ export function getInitialDeviceSessions(
   const info = detectDeviceInfo();
   const now = new Date().toISOString();
 
-  let sessions = [...existingSessions];
+  // Merge with locally stored device sessions so custom renames are NEVER lost or reverted
+  const localSaved = loadSavedDeviceSessions();
+  const sessionMap = new Map<string, DeviceSession>();
+
+  // 1. First add cloud/existing sessions
+  existingSessions.forEach((s) => {
+    if (s && s.id) {
+      sessionMap.set(s.id, { ...s });
+    }
+  });
+
+  // 2. Overlay locally saved sessions to guarantee renames made on this device are strictly preserved
+  localSaved.forEach((s) => {
+    if (s && s.id) {
+      const existing = sessionMap.get(s.id);
+      if (existing) {
+        const localTime = new Date(s.lastActiveAt || 0).getTime();
+        const existingTime = new Date(existing.lastActiveAt || 0).getTime();
+        // If local has a valid name and is newer or equal, or if existing has no name, prefer local
+        if (s.name && s.name.trim() && (localTime >= existingTime || !existing.name)) {
+          sessionMap.set(s.id, {
+            ...existing,
+            name: s.name.trim(),
+            lastActiveAt: s.lastActiveAt || existing.lastActiveAt,
+          });
+        }
+      } else {
+        sessionMap.set(s.id, { ...s });
+      }
+    }
+  });
+
+  let sessions = Array.from(sessionMap.values());
   let activeMainId = mainDeviceId || (sessions.length > 0 ? sessions[0].id : currentDeviceId);
 
   // If no main device exists, current device becomes main
@@ -88,15 +140,13 @@ export function getInitialDeviceSessions(
 
   if (existingIndex >= 0) {
     const existing = sessions[existingIndex];
-    // If the session in cloud already has a custom name assigned (e.g. "father" set by admin):
+    // Master Source of Truth: Keep assigned name
     if (existing.name && existing.name.trim()) {
-      if (!currentSessionName || currentSessionName === 'الجلسة 1' || currentSessionName === existing.name) {
-        effectiveSessionName = existing.name.trim();
-      } else {
-        effectiveSessionName = currentSessionName.trim();
-      }
+      effectiveSessionName = existing.name.trim();
+    } else if (currentSessionName && currentSessionName.trim()) {
+      effectiveSessionName = currentSessionName.trim();
     } else {
-      effectiveSessionName = currentSessionName || 'الجلسة 1';
+      effectiveSessionName = existing.isMainDevice ? 'الجلسة 1 (الرئيسية)' : 'الجلسة 1';
     }
 
     sessions[existingIndex] = {
@@ -106,6 +156,7 @@ export function getInitialDeviceSessions(
       deviceType: info.deviceType,
       lastActiveAt: now,
       isMainDevice: existing.id === activeMainId,
+      isTerminated: Boolean(existing.isTerminated),
     };
   } else {
     // Add this device as a new session
@@ -128,15 +179,21 @@ export function getInitialDeviceSessions(
       isMainDevice: isMain,
       createdAt: now,
       lastActiveAt: now,
+      isTerminated: false,
     };
     sessions.push(newSession);
   }
 
-  // Ensure only one device has isMainDevice = true
+  // Ensure only one device has isMainDevice = true, and all sessions have clean boolean fields
   sessions = sessions.map((s) => ({
     ...s,
+    name: s.name ? s.name.trim() : (s.id === activeMainId ? 'الجلسة 1 (الرئيسية)' : 'جلسة'),
     isMainDevice: s.id === activeMainId,
+    isTerminated: Boolean(s.isTerminated),
   }));
+
+  // Cache updated sessions in local storage
+  saveLocalDeviceSessions(sessions);
 
   const isCurrentDeviceMain = activeMainId === currentDeviceId;
 

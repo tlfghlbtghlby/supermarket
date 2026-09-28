@@ -111,9 +111,28 @@ export function loadSettings(): StoreSettings {
         ? parsed.shopCode
         : generateUniqueAccountCode(parsed.ownerEmail || parsed.phone || undefined);
 
+    let localSessions = Array.isArray(parsed.deviceSessions) && parsed.deviceSessions.length > 0
+      ? parsed.deviceSessions
+      : [];
+    if (localSessions.length === 0) {
+      try {
+        const rawLocal = localStorage.getItem('supermarket_device_sessions_v1');
+        if (rawLocal) {
+          const parsedLocal = JSON.parse(rawLocal);
+          if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
+            localSessions = parsedLocal;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     const mergedSettings: StoreSettings = { 
       ...initialSettings, 
       ...parsed, 
+      deviceSessions: localSessions,
+      mainDeviceId: parsed.mainDeviceId || undefined,
       ownerEmail: parsed.ownerEmail || initialSettings.ownerEmail || 'example@gmail.com',
       ownerPasswordCode: parsed.ownerPasswordCode || initialSettings.ownerPasswordCode || '123123',
       shopCode: userShopCode,

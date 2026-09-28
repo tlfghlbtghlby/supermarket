@@ -245,12 +245,24 @@ export async function syncStoreSettings(settings: StoreSettings, userId: string)
   const path = `settings/${userId}`;
   try {
     const docRef = doc(db, 'settings', userId);
+
+    const cleanSessions = (settings.deviceSessions || []).map((s) => ({
+      id: String(s.id || '').trim(),
+      name: String(s.name || '').trim() || (s.isMainDevice ? 'الجلسة 1 (الرئيسية)' : 'جلسة'),
+      deviceType: s.deviceType || 'MOBILE',
+      browserInfo: String(s.browserInfo || ''),
+      isMainDevice: Boolean(s.isMainDevice),
+      createdAt: String(s.createdAt || new Date().toISOString()),
+      lastActiveAt: String(s.lastActiveAt || new Date().toISOString()),
+      isTerminated: Boolean(s.isTerminated),
+    }));
+
     await setDoc(
       docRef,
       {
         id: userId,
         userId,
-        storeName: settings.storeName,
+        storeName: settings.storeName || 'سوبرماركت',
         ownerName: settings.ownerName || '',
         ownerEmail: settings.ownerEmail || 'example@gmail.com',
         ownerPasswordCode: settings.ownerPasswordCode || '123123',
@@ -267,7 +279,7 @@ export async function syncStoreSettings(settings: StoreSettings, userId: string)
         enableTelegramAlerts: settings.enableTelegramAlerts ?? true,
         enableDailyMidnightReport: settings.enableDailyMidnightReport ?? true,
         lastDailyMidnightReportDate: settings.lastDailyMidnightReportDate || '',
-        deviceSessions: settings.deviceSessions || [],
+        deviceSessions: cleanSessions,
         mainDeviceId: settings.mainDeviceId || '',
         updatedAt: new Date().toISOString(),
       },

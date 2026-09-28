@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StoreSettings, AppUser, Debtor, Transaction, DeviceSession } from '../types';
 import { User } from 'firebase/auth';
+import { loginWithEmailOrPhone } from '../lib/firebase';
 import { resetToSampleData, loadCurrentSessionName, saveCurrentSessionName, loadDebtors, loadTransactions } from '../utils/storage';
 import {
   X,
@@ -43,7 +44,10 @@ import {
   FileSpreadsheet,
   Presentation,
   Download,
+  QrCode,
 } from 'lucide-react';
+import { QrLoginModal } from './QrLoginModal';
+import { QrScannerModal } from './QrScannerModal';
 import {
   downloadExcelBackup,
   downloadPowerPointBackup,
@@ -63,7 +67,10 @@ import {
 import {
   getOrCreateDeviceId,
   getInitialDeviceSessions,
+  saveLocalDeviceSessions,
+  loadSavedDeviceSessions,
 } from '../utils/deviceSession';
+import { parseQrJoinData } from '../utils/qrAuth';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -310,6 +317,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [claimPasswordInput, setClaimPasswordInput] = useState('');
   const [claimError, setClaimError] = useState<string | null>(null);
 
+  // QR Barcode login & scan modals
+  const [isQrLoginOpen, setIsQrLoginOpen] = useState(false);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+
   // Non-blocking Inline UI states (for Android WebView & APK reliability)
   const [isAddingSession, setIsAddingSession] = useState(false);
   const [newSessionNameInput, setNewSessionNameInput] = useState('');
@@ -329,6 +340,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       s.id === sessionId ? { ...s, name: trimmed, lastActiveAt: new Date().toISOString() } : s
     );
     setDeviceSessions(updatedSessions);
+    saveLocalDeviceSessions(updatedSessions);
 
     if (sessionId === currentDeviceId) {
       saveCurrentSessionName(trimmed);
@@ -344,8 +356,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onSaveSettings(newSettings);
 
     setEditingSessionId(null);
-    setSessionActionFeedback(`تم حفظ وتغيير اسم الجلسة إلى "${trimmed}" بنجاح.`);
+    setSessionActionFeedback(`تم حفظ وتثبيت اسم الجلسة إلى "${trimmed}" بنجاح.`);
     setTimeout(() => setSessionActionFeedback(null), 3000);
+  };
+
+  const handleQrJoinSuccess = async (scannedData: string) => {
+    const parsed = parseQrJoinData(scannedData);
+    if (!parsed || (!parsed.email && !parsed.shopCode)) {
+      setSessionActionFeedback('الباركود الممسوح غير صالح أو لا يحتوي على بيانات متجر.');
+      setTimeout(() => setSessionActionFeedback(null), 3000);
+      return;
+    }
+
+    setSessionActionFeedback(`تم مسح الباركود بنجاح لمتجر: ${parsed.storeName || parsed.shopCode}`);
+    if (parsed.email) {
+      try {
+        await loginWithEmailOrPhone(parsed.email, parsed.passwordCode || '123123');
+        onReloadData?.();
+        setIsQrScannerOpen(false);
+      } catch (err: any) {
+        console.warn('QR join error', err);
+      }
+    }
+    setTimeout(() => setSessionActionFeedback(null), 3500);
   };
 
   const handleExecuteSetMainDevice = (targetDeviceId: string) => {
@@ -636,6 +669,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const activeCode = cleanAccountCode(shopCode) || generateUniqueAccountCode(user?.uid);
 
+    let finalSessions = deviceSessions;
+    if (editingSessionId && editingSessionName.trim()) {
+      finalSessions = deviceSessions.map((s) =>
+        s.id === editingSessionId ? { ...s, name: editingSessionName.trim(), lastActiveAt: new Date().toISOString() } : s
+      );
+      setDeviceSessions(finalSessions);
+      saveLocalDeviceSessions(finalSessions);
+    } else {
+      saveLocalDeviceSessions(finalSessions);
+    }
+
     onSaveSettings({
       ...settings,
       storeName: storeName.trim() || 'سوبرماركت',
@@ -661,7 +705,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       telegramOwnerName: telegramOwnerName.trim(),
       enableTelegramAlerts,
       enableDailyMidnightReport,
-      deviceSessions,
+      deviceSessions: finalSessions,
       mainDeviceId,
     });
     onClose();
@@ -749,169 +793,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* نافذة منسدلة 1: رمز الحساب وبيانات تسجيل الدخول */}
-          {/* ======================================================== */}
-          <div className="bg-white dark:bg-[#111726] rounded-xl border border-slate-200/90 dark:border-[#1d273e] overflow-hidden shadow-2xs transition-all w-full">
-            <button
-              type="button"
-              onClick={() => toggleSection('accountCode')}
-              className="w-full px-4 py-3 flex items-center justify-between gap-3 text-right bg-gradient-to-r from-blue-50/70 via-white to-transparent dark:from-[#131d33] dark:via-[#111726] dark:to-transparent hover:bg-blue-50/90 dark:hover:bg-[#16213a] transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
-                  <Key className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
-                      رمز الحساب وبيانات تسجيل الدخول
-                    </h3>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                      بيانات الدخول
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    رمز الحساب، البريد الإلكتروني، والرمز السري (كلمة المرور)
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
-                <span className="text-[11px] font-bold hidden sm:inline text-blue-600 dark:text-blue-400">
-                  {openSections.accountCode ? 'إغلاق الخيارات' : 'عرض الخيارات'}
-                </span>
-                <div
-                  className={`w-7 h-7 rounded-lg bg-slate-100 dark:bg-[#172033] flex items-center justify-center transition-transform duration-200 ${
-                    openSections.accountCode ? 'rotate-180 text-blue-600 dark:text-blue-400' : ''
-                  }`}
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </div>
-              </div>
-            </button>
-
-            {openSections.accountCode && (
-              <div className="p-4 space-y-3 bg-slate-50/50 dark:bg-[#0d1320] border-t border-slate-100 dark:border-[#1d273f] animate-in fade-in duration-200">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  {/* Shop Code Card */}
-                  <div className="p-3 bg-white dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] space-y-1.5 shadow-2xs">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                      <span className="flex items-center gap-1.5">
-                        <Key className="w-3.5 h-3.5 text-blue-500" />
-                        <span>رمز الحساب:</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyText(shopCode, 'رمز الحساب')}
-                        className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer text-[11px] font-semibold"
-                      >
-                        <Copy className="w-3 h-3" />
-                        <span>نسخ</span>
-                      </button>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={shopCode}
-                        onChange={(e) => setShopCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-                        className="w-full text-sm font-black font-mono text-blue-600 dark:text-blue-400 tracking-wider bg-slate-50 dark:bg-[#151c2e] px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#273656] focus:outline-hidden focus:border-blue-500"
-                        placeholder="GXXXXXX"
-                      />
-                      <span className="absolute left-2 top-1.5 text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold pointer-events-none">
-                        الكود
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleRegenerateCode}
-                      className="w-full py-1 px-2 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 bg-slate-100 dark:bg-[#161f33] hover:bg-blue-50 dark:hover:bg-blue-950/60 rounded-md transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <Sparkles className="w-3 h-3 text-amber-500" />
-                      <span>توليد رمز جديد للحساب</span>
-                    </button>
-                  </div>
-
-                  {/* Owner Email */}
-                  <div className="p-3 bg-white dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] space-y-1.5 shadow-2xs">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                      <span className="flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 text-slate-500" />
-                        <span>البريد الإلكتروني:</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyText(ownerEmail, 'البريد الإلكتروني')}
-                        className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer text-[11px] font-semibold"
-                      >
-                        <Copy className="w-3 h-3" />
-                        <span>نسخ</span>
-                      </button>
-                    </div>
-                    <input
-                      type="email"
-                      dir="ltr"
-                      value={ownerEmail}
-                      onChange={(e) => setOwnerEmail(e.target.value)}
-                      className="w-full text-xs font-bold font-mono text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-[#151c2e] px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#273656] focus:outline-hidden focus:border-blue-500 text-left"
-                      placeholder="example@gmail.com"
-                    />
-                    <div className="text-[10px] text-slate-400">
-                      يُستخدم للدخول والمزامنة السحابية
-                    </div>
-                  </div>
-
-                  {/* Owner Password / Security Code */}
-                  <div className="p-3 bg-white dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] space-y-1.5 shadow-2xs">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                      <span className="flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-amber-500" />
-                        <span>الرمز السري (كلمة المرور):</span>
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setShowOwnerPassword(!showOwnerPassword)}
-                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                          title={showOwnerPassword ? 'إخفاء' : 'إظهار'}
-                        >
-                          {showOwnerPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleCopyText(ownerPasswordCode, 'الرمز السري')}
-                          className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer text-[11px] font-semibold"
-                        >
-                          <Copy className="w-3 h-3" />
-                          <span>نسخ</span>
-                        </button>
-                      </div>
-                    </div>
-                    <input
-                      type={showOwnerPassword ? 'text' : 'password'}
-                      dir="ltr"
-                      value={ownerPasswordCode}
-                      onChange={(e) => setOwnerPasswordCode(e.target.value)}
-                      className="w-full text-xs font-bold font-mono text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-[#151c2e] px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#273656] focus:outline-hidden focus:border-blue-500 text-left"
-                      placeholder="123123"
-                    />
-                    <div className="text-[10px] text-slate-400">
-                      يُستخدم لحماية الحساب وصلاحيات الجهاز الرئيسي
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-900/60 flex items-start gap-2 text-xs text-blue-900 dark:text-blue-200">
-                  <Check className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
-                  <span className="text-[11px]">
-                    يمكنك تسجيل الدخول برمز الحساب <code className="font-mono font-bold bg-white dark:bg-[#12192b] px-1 py-0.5 rounded border border-blue-200 dark:border-blue-800">{activeCodeDisplay}</code> أو بالبريد والرمز السري.
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ======================================================== */}
-          {/* نافذة منسدلة 2: إدارة الأجهزة والجلسات النشطة (نقاط البيع والكاشير والجهاز الرئيسي) */}
+          {/* نافذة منسدلة: إدارة الأجهزة والجلسات النشطة (نقاط البيع والكاشير والجهاز الرئيسي) */}
           {/* ======================================================== */}
           <div className="bg-white dark:bg-[#111726] rounded-xl border border-slate-200/90 dark:border-[#1d273e] overflow-hidden shadow-2xs transition-all w-full">
             <button
@@ -1111,6 +993,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   type="text"
                                   value={editingSessionName}
                                   onChange={(e) => setEditingSessionName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      handleSaveRename(s.id);
+                                    } else if (e.key === 'Escape') {
+                                      setEditingSessionId(null);
+                                    }
+                                  }}
                                   className="px-2.5 py-1 bg-white dark:bg-[#182136] border border-blue-500 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
                                   autoFocus
                                 />
