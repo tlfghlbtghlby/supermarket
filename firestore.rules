@@ -166,5 +166,30 @@ service cloud.firestore {
                             && isValidUserProfile(incoming());
       allow delete: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
     }
+
+    // License Validator & Admin Check
+    function isValidLicense(data) {
+      return data.id is string && isValidId(data.id)
+        && data.userId is string && isValidId(data.userId)
+        && (data.status in ['trial', 'active', 'expired'])
+        && data.expiresAt is string && data.expiresAt.size() <= 64;
+    }
+
+    function isOfficialAdmin() {
+      return isSignedIn() && request.auth.token.email == 'tlfghlbtghlby@gmail.com';
+    }
+
+    // Licenses Collection
+    match /licenses/{licenseId} {
+      allow get: if isValidId(licenseId);
+      allow list: if isOfficialAdmin();
+      allow create: if isValidId(licenseId) && (
+        isOfficialAdmin() || (incoming().id == licenseId && incoming().status == 'trial' && isValidLicense(incoming()))
+      );
+      allow update: if isValidId(licenseId) && (
+        isOfficialAdmin() || (existing().id == licenseId && incoming().status == existing().status)
+      );
+      allow delete: if isOfficialAdmin();
+    }
   }
 }

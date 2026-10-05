@@ -120,14 +120,6 @@ export const VoiceTransactionModal: React.FC<VoiceTransactionModalProps> = ({
       },
       onResult: (result: SpeechRecognitionResultItem) => {
         processSpeechText(result.transcript);
-
-        if (result.isFinal) {
-          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-          silenceTimerRef.current = setTimeout(() => {
-            speechRecognizer.stop();
-            setIsListening(false);
-          }, 2000);
-        }
       },
       onEnd: () => {
         setIsListening(false);

@@ -23,7 +23,11 @@ import {
   Mic,
   Sun,
   Moon,
+  Crown,
+  KeyRound,
+  AlertTriangle,
 } from 'lucide-react';
+import { LicenseEvaluation } from '../utils/licenseSystem';
 
 interface HeaderProps {
   settings: StoreSettings;
@@ -49,6 +53,10 @@ interface HeaderProps {
   onLogout: () => void;
   onOpenPhoneAuth?: () => void;
   onForceSync: () => void;
+  licenseEvaluation?: LicenseEvaluation;
+  onOpenLicenseModal?: () => void;
+  onOpenAdminPanel?: () => void;
+  isReadOnly?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -75,6 +83,10 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout: _onLogout,
   onOpenPhoneAuth: _onOpenPhoneAuth,
   onForceSync,
+  licenseEvaluation,
+  onOpenLicenseModal,
+  onOpenAdminPanel,
+  isReadOnly = false,
 }) => {
   const officerName = appUser?.name || settings.ownerName || 'المحل';
 
@@ -100,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
-                <h1 className="text-sm sm:text-base font-black text-slate-900 dark:text-slate-100 tracking-tight truncate max-w-[140px] sm:max-w-[200px] md:max-w-none">
+                <h1 className="text-sm sm:text-base font-black text-slate-900 dark:text-slate-100 tracking-tight break-words">
                   {settings.storeName || 'سوبرماركت دجلة والفرات'}
                 </h1>
 
@@ -162,6 +174,43 @@ export const Header: React.FC<HeaderProps> = ({
                   </>
                 )}
               </button>
+
+              {/* زر لوحة تحكم الإدارة والتراخيص للمدير الرسمي فقط */}
+              {licenseEvaluation?.isAdmin && onOpenAdminPanel && (
+                <button
+                  id="btn-header-admin-panel"
+                  type="button"
+                  onClick={onOpenAdminPanel}
+                  className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-black rounded-xl text-xs shadow-md shadow-amber-500/25 transition-all cursor-pointer shrink-0 animate-pulse"
+                  title="لوحة تحكم المدير والتراخيص (Admin Panel)"
+                >
+                  <Crown className="w-3.5 h-3.5 text-slate-950" />
+                  <span className="text-[11px] sm:text-xs">لوحة المدير 👑</span>
+                </button>
+              )}
+
+              {/* زر معلومات الترخيص والاشتراك */}
+              {onOpenLicenseModal && (
+                <button
+                  id="btn-header-license-info"
+                  type="button"
+                  onClick={onOpenLicenseModal}
+                  title={
+                    isReadOnly
+                      ? 'انتهى الاشتراك - انقر للتفعيل'
+                      : licenseEvaluation?.isTrial
+                      ? `فترة تجريبية (متبقي ${licenseEvaluation.daysRemaining} يوم)`
+                      : 'معلومات الترخيص والاشتراك'
+                  }
+                  className={`p-1.5 sm:p-2 rounded-xl transition-colors border cursor-pointer shrink-0 ${
+                    isReadOnly
+                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border-rose-300 dark:border-rose-800 animate-pulse'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#182137] border-slate-200 dark:border-[#27324c]'
+                  }`}
+                >
+                  {isReadOnly ? <AlertTriangle className="w-4 h-4 text-rose-600" /> : <KeyRound className="w-4 h-4" />}
+                </button>
+              )}
 
               {/* زر الإعدادات في الأعلى في أقصى اليسار */}
               <button
@@ -281,42 +330,54 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </div>
 
-            {/* Quick Actions (الأزرار الثلاثة المحددة: + دين، + تسديد، + زبون) - تتمدد بعرض كامل في الموبايل بدون أي اقتصاص */}
+            {/* Quick Actions (الأزرار الثلاثة المحددة: + دين، + تسديد، + زبون) */}
             <div className="grid grid-cols-3 sm:flex items-center gap-1.5 w-full sm:w-auto">
               {/* Quick Add Debt (+ دين) */}
               <button
                 id="btn-quick-add-debt"
                 type="button"
-                onClick={onOpenAddDebt}
-                className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 active:scale-95"
-                title="تسجيل دين جديد"
+                onClick={isReadOnly && onOpenLicenseModal ? onOpenLicenseModal : onOpenAddDebt}
+                className={`flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-1.5 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 active:scale-95 ${
+                  isReadOnly
+                    ? 'bg-slate-400 dark:bg-slate-700 hover:bg-rose-600'
+                    : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+                title={isReadOnly ? 'وضع المعاينة فقط - انقر للتفعيل' : 'تسجيل دين جديد'}
               >
                 <PlusCircle className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">+ دين</span>
+                <span className="whitespace-nowrap font-black">+ دين</span>
               </button>
 
               {/* Quick Add Payment (+ تسديد) */}
               <button
                 id="btn-quick-add-payment"
                 type="button"
-                onClick={onOpenAddPayment}
-                className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 active:scale-95"
-                title="تسجيل دفعة تسديد"
+                onClick={isReadOnly && onOpenLicenseModal ? onOpenLicenseModal : onOpenAddPayment}
+                className={`flex items-center justify-center gap-1 px-2.5 py-1.5 sm:px-3 sm:py-1.5 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 active:scale-95 ${
+                  isReadOnly
+                    ? 'bg-slate-400 dark:bg-slate-700 hover:bg-emerald-600'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+                title={isReadOnly ? 'وضع المعاينة فقط - انقر للتفعيل' : 'تسجيل دفعة تسديد'}
               >
                 <ArrowDownLeft className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">+ تسديد</span>
+                <span className="whitespace-nowrap font-black">+ تسديد</span>
               </button>
 
               {/* Add Debtor (+ زبون) */}
               <button
                 id="btn-add-debtor"
                 type="button"
-                onClick={onOpenAddDebtor}
-                className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 active:scale-95"
-                title="إضافة زبون جديد"
+                onClick={isReadOnly && onOpenLicenseModal ? onOpenLicenseModal : onOpenAddDebtor}
+                className={`flex items-center justify-center gap-1 px-2.5 py-1.5 sm:px-3 sm:py-1.5 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 active:scale-95 ${
+                  isReadOnly
+                    ? 'bg-slate-400 dark:bg-slate-700 hover:bg-blue-600'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+                title={isReadOnly ? 'وضع المعاينة فقط - انقر للتفعيل' : 'إضافة زبون جديد'}
               >
                 <UserPlus className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">+ زبون</span>
+                <span className="whitespace-nowrap font-black">+ زبون</span>
               </button>
             </div>
           </div>

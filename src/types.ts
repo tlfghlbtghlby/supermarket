@@ -114,6 +114,10 @@ export interface DeviceSession {
   createdAt: string;
   lastActiveAt: string;
   isTerminated?: boolean; // هل تم تسجيل خروجه عن بُعد
+  deviceName?: string; // اسم الجهاز المسجل (مثل: iPhone 14 Pro, Samsung Galaxy, Windows PC)
+  ipAddress?: string; // عنوان الآي بي للجهاز (IP Address)
+  location?: string; // مكان وموقع الجهاز الجغرافي (مثل: بغداد، العراق 🇮🇶)
+  isp?: string; // مزود الخدمة أو شركة الإنترنت
 }
 
 export interface AppUser {

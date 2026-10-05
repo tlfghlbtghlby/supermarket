@@ -52,6 +52,8 @@ interface SuppliersViewProps {
     paymentMethod?: PaymentMethod;
   }) => void;
   onDeleteSupplierTransaction: (txId: string) => void;
+  isReadOnly?: boolean;
+  onOpenLicenseModal?: () => void;
 }
 
 export const SuppliersView: React.FC<SuppliersViewProps> = ({
@@ -63,6 +65,8 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
   onDeleteSupplier,
   onAddSupplierTransaction,
   onDeleteSupplierTransaction,
+  isReadOnly = false,
+  onOpenLicenseModal,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
@@ -73,6 +77,15 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
   const [txModalOpen, setTxModalOpen] = useState(false);
   const [txSupplierId, setTxSupplierId] = useState<string>('');
   const [txType, setTxType] = useState<'SUPPLY_BILL' | 'SUPPLY_PAYMENT'>('SUPPLY_BILL');
+
+  const handleOpenAddSupplier = () => {
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+    } else {
+      setEditingSupplier(null);
+      setShowAddSupplierModal(true);
+    }
+  };
   const [txAmount, setTxAmount] = useState('');
   const [txDesc, setTxDesc] = useState('');
   const [txInvoiceNo, setTxInvoiceNo] = useState('');
@@ -135,6 +148,10 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
 
   // Reset Add/Edit Supplier Form
   const openAddSupplier = () => {
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+      return;
+    }
     setEditingSupplier(null);
     setFormName('');
     setFormCompany('');
@@ -146,6 +163,10 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
   };
 
   const openEditSupplier = (sup: Supplier) => {
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+      return;
+    }
     setEditingSupplier(sup);
     setFormName(sup.name);
     setFormCompany(sup.companyName || '');
@@ -158,6 +179,10 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
 
   const handleSaveSupplierForm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+      return;
+    }
     if (!formName.trim()) return;
 
     if (editingSupplier) {
@@ -184,6 +209,10 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
   };
 
   const openNewTransaction = (supplierId?: string, defaultType: 'SUPPLY_BILL' | 'SUPPLY_PAYMENT' = 'SUPPLY_BILL') => {
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+      return;
+    }
     setTxSupplierId(supplierId || suppliers[0]?.id || '');
     setTxType(defaultType);
     setTxAmount('');
@@ -196,6 +225,10 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
 
   const handleSaveTransaction = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+      return;
+    }
     const parsedAmount = parseFloat(txAmount);
     if (!txSupplierId || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
@@ -231,6 +264,25 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Read-Only Mode Banner */}
+      {isReadOnly && (
+        <div className="bg-rose-950/70 border border-rose-600/70 p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-rose-200 text-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 animate-pulse" />
+            <span>البرنامج في وضع العرض فقط. يمكنك تصفح كافة فواتير الموردين المسجلة، ولإضافة فواتير أو تسديدات جديدة يرجى تفعيل الاشتراك.</span>
+          </div>
+          {onOpenLicenseModal && (
+            <button
+              type="button"
+              onClick={onOpenLicenseModal}
+              className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer"
+            >
+              تفعيل الحساب
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Top Banner & Overview */}
       <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl p-4 sm:p-6 border border-slate-800 shadow-md">
         <div className="flex flex-wrap items-center justify-between gap-4">

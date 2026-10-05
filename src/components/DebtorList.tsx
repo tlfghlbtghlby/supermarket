@@ -43,6 +43,8 @@ interface DebtorListProps {
   onFilterChange: (filter: DebtorFilter) => void;
   currentSort: DebtorSort;
   onSortChange: (sort: DebtorSort) => void;
+  isReadOnly?: boolean;
+  onOpenLicenseModal?: () => void;
 }
 
 export const DebtorList: React.FC<DebtorListProps> = ({
@@ -63,8 +65,50 @@ export const DebtorList: React.FC<DebtorListProps> = ({
   onFilterChange,
   currentSort,
   onSortChange,
+  isReadOnly = false,
+  onOpenLicenseModal,
 }) => {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+
+  const handleAddDebtorClick = () => {
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+    } else {
+      onAddNewDebtor();
+    }
+  };
+
+  const handleQuickDebtClick = (d: DebtorWithStats) => {
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+    } else {
+      onQuickAddDebt(d);
+    }
+  };
+
+  const handleQuickPaymentClick = (d: DebtorWithStats) => {
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+    } else {
+      onQuickAddPayment(d);
+    }
+  };
+
+  const handleEditClick = (d: DebtorWithStats) => {
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+    } else {
+      onEditDebtor(d);
+    }
+  };
+
+  const handleDeleteClick = (id: string, name: string) => {
+    if (isReadOnly && onOpenLicenseModal) {
+      onOpenLicenseModal();
+    } else {
+      onDeleteDebtor(id, name);
+    }
+  };
 
   return (
     <div className="relative space-y-4">
@@ -186,7 +230,7 @@ export const DebtorList: React.FC<DebtorListProps> = ({
             يمكنك مسح الفلتر أو إضافة زبون جديد لتسجيل مديونيته ومشترياته الآجلة.
           </p>
           <button
-            onClick={onAddNewDebtor}
+            onClick={handleAddDebtorClick}
             className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
           >
             <PlusCircle className="w-4 h-4" />
@@ -210,10 +254,10 @@ export const DebtorList: React.FC<DebtorListProps> = ({
                 <div className="flex items-start justify-between gap-3">
                   {/* Right side (RTL): Number + Name + Subtitle */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h4
                         onClick={() => onSelectDebtor(debtor)}
-                        className={`text-lg sm:text-xl font-black cursor-pointer hover:underline truncate ${
+                        className={`text-lg sm:text-xl font-black cursor-pointer hover:underline break-words ${
                           hasDebt
                             ? 'text-rose-600 dark:text-[#f87171]'
                             : 'text-emerald-600 dark:text-[#34d399]'
@@ -255,15 +299,15 @@ export const DebtorList: React.FC<DebtorListProps> = ({
                       )}
 
                       {debtor.address && (
-                        <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 font-medium">
+                        <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 font-medium break-words">
                           <MapPin className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0" />
-                          <span className="truncate max-w-[150px]">{debtor.address}</span>
+                          <span>{debtor.address}</span>
                         </span>
                       )}
                     </div>
 
                     {debtor.notes && (
-                      <p className="text-xs text-slate-800 dark:text-slate-200 mt-1 font-medium italic line-clamp-1">
+                      <p className="text-xs text-slate-800 dark:text-slate-200 mt-1 font-medium italic break-words">
                         ملاحظة: {debtor.notes}
                       </p>
                     )}
@@ -332,7 +376,7 @@ export const DebtorList: React.FC<DebtorListProps> = ({
                     {/* Quick Add Debt (+) */}
                     <button
                       type="button"
-                      onClick={() => onQuickAddDebt(debtor)}
+                      onClick={() => handleQuickDebtClick(debtor)}
                       title="تسجيل دين جديد على الزبون (+)"
                       className="p-2 sm:px-3.5 bg-slate-100 dark:bg-[#182137] hover:bg-slate-200 dark:hover:bg-[#222d4a] border border-slate-200 dark:border-[#2b3957] text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-colors cursor-pointer flex items-center justify-center gap-1"
                     >
@@ -343,7 +387,7 @@ export const DebtorList: React.FC<DebtorListProps> = ({
                     {/* Quick Add Payment */}
                     <button
                       type="button"
-                      onClick={() => onQuickAddPayment(debtor)}
+                      onClick={() => handleQuickPaymentClick(debtor)}
                       title="تسجيل دفعة سداد"
                       className="p-2 sm:px-3 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1"
                     >
@@ -389,7 +433,7 @@ export const DebtorList: React.FC<DebtorListProps> = ({
                             type="button"
                             onClick={() => {
                               setMenuOpenId(null);
-                              onEditDebtor(debtor);
+                              handleEditClick(debtor);
                             }}
                             className="w-full text-right px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#1f2942] flex items-center gap-2 cursor-pointer"
                           >
@@ -400,7 +444,7 @@ export const DebtorList: React.FC<DebtorListProps> = ({
                             type="button"
                             onClick={() => {
                               setMenuOpenId(null);
-                              onDeleteDebtor(debtor.id, debtor.name);
+                              handleDeleteClick(debtor.id, debtor.name);
                             }}
                             className="w-full text-right px-3 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2 cursor-pointer border-t border-slate-100 dark:border-[#27324c]"
                           >
@@ -422,7 +466,7 @@ export const DebtorList: React.FC<DebtorListProps> = ({
       <button
         type="button"
         id="fab-add-debtor"
-        onClick={onAddNewDebtor}
+        onClick={handleAddDebtorClick}
         title="إضافة زبون جديد"
         className="fixed bottom-6 left-6 z-40 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl shadow-xl flex items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95 focus:outline-none"
       >

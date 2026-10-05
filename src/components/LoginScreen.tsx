@@ -12,6 +12,8 @@ import {
   AlertCircle,
   Loader2,
   ArrowRight,
+  QrCode,
+  Camera,
 } from 'lucide-react';
 import {
   loginWithEmailOrPhone,
@@ -22,6 +24,8 @@ import { syncStoreSettings } from '../services/firebaseSync';
 import { initialSettings } from '../data/initialData';
 import { saveAppUser, loadSettings, saveSettings } from '../utils/storage';
 import { generateUniqueAccountCode } from '../utils/accountCode';
+import { parseQrJoinData } from '../utils/qrAuth';
+import { QrScannerModal } from './QrScannerModal';
 import { AppUser } from '../types';
 
 interface LoginScreenProps {
@@ -35,6 +39,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [ownerName, setOwnerName] = useState('');
   const [storeName, setStoreName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -109,9 +114,36 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     const upperId = cleanId.toUpperCase();
     const isOwnerDemo = upperId === 'G781011' || cleanId.toLowerCase() === 'example@gmail.com';
     const isCashierDemo = upperId === 'C202401' || cleanId.toLowerCase() === 'cashier@example.com';
+    const isAdminOfficial = cleanId.toLowerCase() === 'tlfghlbtghlby@gmail.com';
 
     try {
       if (mode === 'LOGIN') {
+        // Admin Official Login for tlfghlbtghlby@gmail.com
+        if (isAdminOfficial) {
+          try {
+            await loginWithEmailOrPhone(cleanId, password);
+          } catch (cloudErr) {
+            console.warn('Admin cloud login fallback to local session:', cloudErr);
+          }
+          const targetUser: AppUser = {
+            id: 'usr-admin-tlfghlbtghlby',
+            name: 'المدير العام (Admin)',
+            phone: '07800000000',
+            email: 'tlfghlbtghlby@gmail.com',
+            role: 'ADMIN',
+            isLoggedIn: true,
+          };
+          saveAppUser(targetUser);
+          const currentSettings = loadSettings();
+          saveSettings({
+            ...currentSettings,
+            ownerEmail: 'tlfghlbtghlby@gmail.com',
+            ownerName: 'المدير العام',
+          });
+          onLoginSuccess?.();
+          return;
+        }
+
         // Internal silent handling of registered credentials if typed
         if (isOwnerDemo && password === '123123') {
           const targetUser: AppUser = {
@@ -190,6 +222,31 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const handleScanQrSuccess = async (scannedData: string) => {
+    setIsQrScannerOpen(false);
+    const parsed = parseQrJoinData(scannedData);
+    if (!parsed || (!parsed.email && !parsed.shopCode)) {
+      setErrorMsg('الباركود الممسوح غير صالح أو لا يحتوي على بيانات تسجيل دخول متجر.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      if (parsed.email) {
+        await loginWithEmailOrPhone(parsed.email, parsed.passwordCode || '123123');
+        setSuccessMsg(`تم مسح الباركود بنجاح لمتجر: ${parsed.storeName || 'المحل'}! يتم الدخول الآن...`);
+        setTimeout(() => {
+          onLoginSuccess?.();
+        }, 500);
+      }
+    } catch (err: any) {
+      setErrorMsg(mapAuthError(err));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div
       className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6"
@@ -256,6 +313,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 إنشاء حساب جديد
               </button>
             </div>
+          )}
+
+          {/* Quick QR Barcode Scanner Login Button */}
+          {mode === 'LOGIN' && (
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMsg(null);
+                setIsQrScannerOpen(true);
+              }}
+              className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-indigo-500/15 to-purple-500/15 hover:from-amber-500/25 hover:to-purple-500/25 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-98"
+            >
+              <QrCode className="w-4 h-4 text-amber-400" />
+              <span>تسجيل الدخول عبر مسح الباركود (QR)</span>
+              <Camera className="w-3.5 h-3.5 text-amber-400/80" />
+            </button>
           )}
 
           {/* Alert Messages */}
@@ -432,6 +505,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           </div>
         </div>
       </div>
+
+      {/* QR Scanner Modal for Barcode Login */}
+      <QrScannerModal
+        isOpen={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        onScanSuccess={handleScanQrSuccess}
+      />
     </div>
   );
 };

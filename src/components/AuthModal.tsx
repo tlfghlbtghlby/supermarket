@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { AppUser } from '../types';
-import { Lock, Phone, KeyRound, Check, X, ShieldCheck, ArrowRight, UserCheck } from 'lucide-react';
+import { Lock, Phone, KeyRound, Check, X, ShieldCheck, ArrowRight, UserCheck, QrCode } from 'lucide-react';
+import { QrScannerModal } from './QrScannerModal';
+import { parseQrJoinData } from '../utils/qrAuth';
+import { loginWithEmailOrPhone } from '../lib/firebase';
 
 interface AuthModalProps {
   currentUser: AppUser | null;
@@ -25,6 +28,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
   if (!isOpen) return null;
 
@@ -92,6 +96,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setTimeout(() => {
       onClose();
     }, 600);
+  };
+
+  const handleScanQrSuccess = async (scannedData: string) => {
+    setIsQrScannerOpen(false);
+    const parsed = parseQrJoinData(scannedData);
+    if (!parsed || (!parsed.email && !parsed.shopCode)) {
+      setErrorMsg('الباركود الممسوح غير صالح أو لا يحتوي على بيانات تسجيل دخول متجر.');
+      return;
+    }
+
+    try {
+      if (parsed.email) {
+        await loginWithEmailOrPhone(parsed.email, parsed.passwordCode || '123123');
+      }
+      const user: AppUser = {
+        id: 'usr-' + Date.now(),
+        name: parsed.storeName || 'مسؤول المتجر',
+        phone: '07854668977',
+        email: parsed.email,
+        shopCode: parsed.shopCode,
+        passwordCode: parsed.passwordCode || '123123',
+        role: 'OWNER',
+        isLoggedIn: true,
+      };
+      onLogin(user);
+      setSuccessMsg('تم مسح الباركود بنجاح وتسجيل الدخول للمتجر!');
+      setTimeout(() => {
+        onClose();
+      }, 600);
+    } catch (err: any) {
+      setErrorMsg('تعذر تسجيل الدخول بالباركود.');
+    }
   };
 
   const handleSendOtp = (e: React.FormEvent) => {
@@ -265,6 +301,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             >
               تسجيل الدخول
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMsg(null);
+                setIsQrScannerOpen(true);
+              }}
+              className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-[#1c263c] dark:hover:bg-[#25324e] text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-slate-300 dark:border-[#2f3f61]"
+            >
+              <QrCode className="w-3.5 h-3.5 text-amber-500" />
+              <span>مسح باركود الدخول السريع (QR)</span>
+            </button>
           </form>
         ) : mode === 'FORGOT' ? (
           /* Forgot Password Step 1: Phone */
@@ -364,6 +412,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </form>
         )}
       </div>
+
+      <QrScannerModal
+        isOpen={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        onScanSuccess={handleScanQrSuccess}
+      />
     </div>
   );
 };

@@ -53,6 +53,8 @@ interface DebtorDetailModalProps {
   onEditDebtor: (debtor: DebtorWithStats) => void;
   onPrint: (debtor: DebtorWithStats) => void;
   onDeleteDebtor?: (debtorId: string) => void;
+  isReadOnly?: boolean;
+  onOpenLicenseModal?: () => void;
 }
 
 export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
@@ -68,6 +70,8 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
   onEditDebtor,
   onPrint,
   onDeleteDebtor,
+  isReadOnly = false,
+  onOpenLicenseModal,
 }) => {
   const [filterType, setFilterType] = useState<'ALL' | 'DEBT' | 'PAYMENT'>('ALL');
   const [sortBy, setSortBy] = useState<'CREATED' | 'DATE'>('CREATED');
@@ -331,6 +335,25 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3.5 bg-[#0e1322]">
+          {/* Read-Only Mode Notice if Expired */}
+          {isReadOnly && (
+            <div className="bg-rose-950/60 border border-rose-600/70 p-3 rounded-xl flex items-center justify-between gap-2.5 text-rose-200 text-xs">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 shrink-0 text-rose-400 animate-pulse" />
+                <span>البرنامج في وضع العرض فقط. لا يمكن تسجيل حركات جديدة أو تعديل البيانات حتى يتم تفعيل الاشتراك.</span>
+              </div>
+              {onOpenLicenseModal && (
+                <button
+                  type="button"
+                  onClick={onOpenLicenseModal}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold shrink-0 cursor-pointer"
+                >
+                  تفعيل الحساب
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Credit Limit Alert Banner */}
           {debtor.isOverLimit && (
             <div className="bg-amber-500/15 border border-amber-500/40 p-3 rounded-xl flex items-center gap-2.5 text-amber-300 text-xs">
@@ -664,11 +687,11 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
                         <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
                           <div
                             onClick={() => startEditingNotes(tx)}
-                            className="flex items-center gap-1.5 hover:text-slate-200 cursor-pointer flex-1"
+                            className="flex items-start gap-1.5 hover:text-slate-200 cursor-pointer flex-1"
                             title="انقر لتعديل الملاحظة"
                           >
-                            <FileText className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                            <span className="truncate">
+                            <FileText className="w-3.5 h-3.5 shrink-0 text-slate-400 mt-0.5" />
+                            <span className="break-words">
                               الملاحظة: {tx.notes || tx.description || 'لا يوجد ملاحظات'}
                             </span>
                           </div>
@@ -715,9 +738,15 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
               <button
                 onClick={() => {
                   setShowQuickAddMenu(false);
-                  onAddDebt(debtor);
+                  if (isReadOnly && onOpenLicenseModal) {
+                    onOpenLicenseModal();
+                  } else {
+                    onAddDebt(debtor);
+                  }
                 }}
-                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                className={`px-3.5 py-2 text-white rounded-xl shadow-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  isReadOnly ? 'bg-slate-700 hover:bg-slate-600' : 'bg-amber-600 hover:bg-amber-700'
+                }`}
               >
                 <Plus className="w-4 h-4" />
                 <span>+ تسجيل دين (مشتريات)</span>
@@ -725,9 +754,15 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
               <button
                 onClick={() => {
                   setShowQuickAddMenu(false);
-                  onAddPayment(debtor);
+                  if (isReadOnly && onOpenLicenseModal) {
+                    onOpenLicenseModal();
+                  } else {
+                    onAddPayment(debtor);
+                  }
                 }}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                className={`px-3.5 py-2 text-white rounded-xl shadow-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  isReadOnly ? 'bg-slate-700 hover:bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
               >
                 <ArrowDown className="w-4 h-4" />
                 <span>+ قبض دفعة (سداد)</span>
@@ -736,9 +771,17 @@ export const DebtorDetailModal: React.FC<DebtorDetailModalProps> = ({
           ) : null}
 
           <button
-            onClick={() => setShowQuickAddMenu(!showQuickAddMenu)}
-            className="w-13 h-13 rounded-2xl bg-blue-500 hover:bg-blue-600 active:scale-95 text-white flex items-center justify-center shadow-xl transition-all cursor-pointer"
-            title="إضافة حركة جديدة"
+            onClick={() => {
+              if (isReadOnly && onOpenLicenseModal) {
+                onOpenLicenseModal();
+              } else {
+                setShowQuickAddMenu(!showQuickAddMenu);
+              }
+            }}
+            className={`w-13 h-13 rounded-2xl active:scale-95 text-white flex items-center justify-center shadow-xl transition-all cursor-pointer ${
+              isReadOnly ? 'bg-slate-600 hover:bg-slate-500' : 'bg-blue-500 hover:bg-blue-600'
+            }`}
+            title={isReadOnly ? 'وضع المعاينة فقط - انقر للتفعيل' : 'إضافة حركة جديدة'}
           >
             <Plus className={`w-7 h-7 transition-transform duration-200 ${showQuickAddMenu ? 'rotate-45' : ''}`} />
           </button>

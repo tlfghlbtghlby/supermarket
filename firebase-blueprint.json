@@ -77,6 +77,26 @@
         "role": { "type": "string", "enum": ["OWNER", "STAFF"] }
       },
       "required": ["uid", "email"]
+    },
+    "license": {
+      "title": "License",
+      "description": "User license and trial subscription record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["trial", "active", "expired"] },
+        "trialStartDate": { "type": "string", "format": "date-time" },
+        "trialEndDate": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "plan": { "type": "string", "maxLength": 50 },
+        "activatedAt": { "type": "string", "format": "date-time" },
+        "activatedBy": { "type": "string", "maxLength": 200 },
+        "clientName": { "type": "string", "maxLength": 150 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "status", "expiresAt"]
     }
   },
   "firestore": {
@@ -95,6 +115,10 @@
     "/users/{userId}": {
       "schema": { "$ref": "userProfile" },
       "description": "User profile collection"
+    },
+    "/licenses/{licenseId}": {
+      "schema": { "$ref": "license" },
+      "description": "Collection of software licenses and activations"
     }
   }
 }

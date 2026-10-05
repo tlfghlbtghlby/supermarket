@@ -133,9 +133,10 @@ export const GeminiAssistantModal: React.FC<GeminiAssistantModalProps> = ({
     if (isListening) {
       speechRecognizer.stop();
       setIsListening(false);
-      if (liveTranscript.trim()) {
-        handleSendMessage(liveTranscript.trim());
-        setLiveTranscript('');
+      const textToSend = liveTranscript.trim();
+      setLiveTranscript('');
+      if (textToSend) {
+        handleSendMessage(textToSend);
       }
       return;
     }
@@ -152,18 +153,11 @@ export const GeminiAssistantModal: React.FC<GeminiAssistantModalProps> = ({
         setIsListening(true);
       },
       onResult: (result: SpeechRecognitionResultItem) => {
+        // Continuous listening: accumulate and show live transcript, do NOT stop until user clicks button again
         setLiveTranscript(result.transcript);
-        if (result.isFinal) {
-          const final = result.transcript.trim();
-          setIsListening(false);
-          setLiveTranscript('');
-          speechRecognizer.stop();
-          if (final) {
-            handleSendMessage(final);
-          }
-        }
       },
       onEnd: () => {
+        // Keep isListening state in sync if stopped externally
         setIsListening(false);
       },
       onError: (err) => {
@@ -394,8 +388,8 @@ export const GeminiAssistantModal: React.FC<GeminiAssistantModalProps> = ({
         </div>
 
         {/* Current Active Session & Context Badge */}
-        <div className="px-4 py-1.5 bg-indigo-50/80 dark:bg-indigo-950/40 border-b border-indigo-100 dark:border-indigo-900/40 text-[11px] flex items-center justify-between text-indigo-900 dark:text-indigo-200 shrink-0">
-          <div className="flex items-center gap-1.5 truncate">
+        <div className="px-4 py-1.5 bg-indigo-50/80 dark:bg-indigo-950/40 border-b border-indigo-100 dark:border-indigo-900/40 text-[11px] flex flex-wrap items-center justify-between gap-1 text-indigo-900 dark:text-indigo-200 shrink-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <Tag className="w-3 h-3 text-indigo-500 shrink-0" />
             <span>الجلسة النشطة: <strong>{currentSessionName || 'الجلسة 1'}</strong></span>
             <span className="text-slate-400">•</span>

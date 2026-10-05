@@ -265,7 +265,7 @@ export const RecentTransactionsList: React.FC<RecentTransactionsListProps> = ({
 
                             <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5" dir="ltr">
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              <span className="font-semibold">{formatDate(tx.date).slice(11)}</span>
+                              <span className="font-semibold">{formatDate(tx.date)}</span>
                             </div>
                           </div>
                         </div>

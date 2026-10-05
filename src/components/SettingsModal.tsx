@@ -45,7 +45,15 @@ import {
   Presentation,
   Download,
   QrCode,
+  Globe,
+  MapPin,
+  Wifi,
 } from 'lucide-react';
+import {
+  fetchDeviceNetworkInfo,
+  loadSavedNetworkInfo,
+  DeviceNetworkInfo,
+} from '../utils/deviceSession';
 import { QrLoginModal } from './QrLoginModal';
 import { QrScannerModal } from './QrScannerModal';
 import {
@@ -71,6 +79,7 @@ import {
   loadSavedDeviceSessions,
 } from '../utils/deviceSession';
 import { parseQrJoinData } from '../utils/qrAuth';
+import { LicenseEvaluation } from '../utils/licenseSystem';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -93,6 +102,10 @@ interface SettingsModalProps {
   onSetThemeMode?: (mode: 'light' | 'dark' | 'system') => void;
   currentSessionName?: string;
   onSetCurrentSessionName?: (name: string) => void;
+  licenseEvaluation?: LicenseEvaluation;
+  onOpenLicenseModal?: () => void;
+  onOpenAdminPanel?: () => void;
+  isReadOnly?: boolean;
 }
 
 const COMMON_CURRENCIES = [
@@ -126,6 +139,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSetThemeMode,
   currentSessionName: propSessionName,
   onSetCurrentSessionName,
+  licenseEvaluation,
+  onOpenLicenseModal,
+  onOpenAdminPanel,
+  isReadOnly = false,
 }) => {
   const [storeName, setStoreName] = useState(settings.storeName || 'دفتر ديون السوبرماركت');
   const [ownerName, setOwnerName] = useState(settings.ownerName || 'صاحب المحل');
@@ -295,6 +312,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return initial.activeMainDeviceId;
   });
 
+  const [localNet, setLocalNet] = useState<DeviceNetworkInfo | null>(() => loadSavedNetworkInfo());
+
+  React.useEffect(() => {
+    fetchDeviceNetworkInfo().then((info) => {
+      setLocalNet(info);
+    });
+  }, []);
+
   // Re-sync whenever settings.deviceSessions or mainDeviceId change
   React.useEffect(() => {
     const currentSessionName = propSessionName || loadCurrentSessionName();
@@ -426,6 +451,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     setConfirmingTerminateId(null);
     setSessionActionFeedback(`تم تسجيل خروج الجلسة "${target.name}" بنجاح.`);
+    setTimeout(() => setSessionActionFeedback(null), 3500);
+  };
+
+  const handleTerminateAllOtherSessions = () => {
+    if (!confirm('هل أنت متأكد من إنهاء جميع الجلسات الأخرى وتسجيل الخروج منها فوراً؟')) return;
+    const thisSessionOnly = deviceSessions.filter((s) => s.id === currentDeviceId);
+    setDeviceSessions(thisSessionOnly);
+    const newSettings: StoreSettings = {
+      ...settings,
+      deviceSessions: thisSessionOnly,
+      mainDeviceId: currentDeviceId,
+    };
+    onSaveSettings(newSettings);
+    setSessionActionFeedback('تم إنهاء جميع الجلسات الأخرى بنجاح.');
     setTimeout(() => setSessionActionFeedback(null), 3500);
   };
 
@@ -712,6 +751,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleResetData = () => {
+    if (isReadOnly) {
+      alert('البرنامج حالياً في وضع المعاينة فقط. لا يمكن حذف أو إعادة تعيين البيانات.');
+      return;
+    }
     if (
       confirm(
         'تحذير: سيتم حذف جميع البيانات الحالية وإعادة تعيين التطبيق إلى البيانات التجريبية الأولية بالدينار العراقي. هل تريد المتابعة؟'
@@ -789,6 +832,80 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="p-2.5 bg-blue-500/15 border border-blue-500/40 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 animate-in fade-in">
               <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0" />
               <span>{sessionActionFeedback}</span>
+            </div>
+          )}
+
+          {/* Exclusive Admin Panel Card for tlfghlbtghlby@gmail.com */}
+          {licenseEvaluation?.isAdmin && onOpenAdminPanel && (
+            <div className="bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700 text-white rounded-2xl p-4 sm:p-5 shadow-lg border border-amber-400/40 flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-yellow-200">
+                  <Crown className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black">لوحة تحكم المدير والتراخيص (Admin Panel)</h3>
+                  <p className="text-xs text-amber-100 font-medium">
+                    أنت مسجل بالبريد الرسمي للإدارة: tlfghlbtghlby@gmail.com
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenAdminPanel();
+                }}
+                className="px-4 py-2 bg-slate-950/80 hover:bg-slate-900 text-amber-300 hover:text-white text-xs font-black rounded-xl border border-amber-400/40 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Key className="w-4 h-4 text-amber-400" />
+                <span>فتح لوحة تفعيل التراخيص</span>
+              </button>
+            </div>
+          )}
+
+          {/* License & Subscription Info Card for all users */}
+          {licenseEvaluation && (
+            <div className="bg-white dark:bg-[#111726] rounded-xl border border-slate-200/90 dark:border-[#1d273e] p-4 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white ${
+                  licenseEvaluation.isReadOnly
+                    ? 'bg-rose-600'
+                    : licenseEvaluation.isTrial
+                    ? 'bg-blue-600'
+                    : 'bg-emerald-600'
+                }`}>
+                  <Key className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                      رمز هذا الجهاز (User ID):
+                    </span>
+                    <span className="font-mono font-black text-xs px-2 py-0.5 rounded-md bg-slate-100 dark:bg-[#1a233a] text-blue-600 dark:text-blue-400">
+                      {licenseEvaluation.license.id}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    {licenseEvaluation.isReadOnly ? (
+                      <span className="text-rose-600 dark:text-rose-400 font-bold">انتهت الفترة التجريبية - البرنامج بوضع المعاينة فقط</span>
+                    ) : licenseEvaluation.isTrial ? (
+                      <span className="text-blue-600 dark:text-blue-400 font-bold">فترة تجريبية مجانية (متبقي {licenseEvaluation.daysRemaining} يوم)</span>
+                    ) : (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">اشتراك مفعل بكامل الصلاحيات</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {onOpenLicenseModal && (
+                <button
+                  type="button"
+                  onClick={onOpenLicenseModal}
+                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-[#1c253d] dark:hover:bg-[#25324e] text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  تفاصيل الترخيص
+                </button>
+              )}
             </div>
           )}
 
@@ -951,192 +1068,352 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 )}
 
-                {/* List of device sessions formatted as horizontal rectangular strips across the screen */}
-                <div className="space-y-2">
-                  {deviceSessions.map((s) => {
-                    const isThis = s.id === currentDeviceId;
-                    const isMain = s.id === mainDeviceId || s.isMainDevice;
+                {/* Telegram-style Devices & Sessions Layout */}
+                <div className="space-y-4">
+                  {/* 1. هذا الجهاز (This Device) */}
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-black text-blue-600 dark:text-blue-400 px-1 flex items-center gap-1.5">
+                      <Smartphone className="w-3.5 h-3.5" />
+                      <span>هذا الجهاز (الجهاز الحالي)</span>
+                    </div>
 
-                    return (
-                      <div
-                        key={s.id}
-                        className={`p-3 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-2.5 w-full ${
-                          isMain
-                            ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300/80 dark:border-amber-800/60 shadow-2xs'
-                            : isThis
-                            ? 'bg-blue-50/30 dark:bg-blue-950/20 border-blue-300/70 dark:border-blue-800/50'
-                            : 'bg-white dark:bg-[#101524] border-slate-200 dark:border-[#243354]'
-                        }`}
-                      >
-                        {/* Device Info & Name */}
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                              isMain
-                                ? 'bg-amber-500 text-white'
-                                : isThis
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                            }`}
-                          >
-                            {s.deviceType === 'MOBILE' ? (
-                              <Smartphone className="w-4 h-4" />
-                            ) : (
-                              <Laptop className="w-4 h-4" />
-                            )}
-                          </div>
+                    {(() => {
+                      const s = deviceSessions.find((dev) => dev.id === currentDeviceId) || deviceSessions[0] || {
+                        id: currentDeviceId,
+                        name: propSessionName || 'الجلسة 1',
+                        deviceName: 'Tecno TECNO POVA 6 Pro 5G',
+                        deviceType: 'MOBILE' as const,
+                        browserInfo: 'Google Chrome (Android)',
+                        isMainDevice: isCurrentDeviceMain,
+                        createdAt: new Date().toISOString(),
+                        lastActiveAt: new Date().toISOString(),
+                      };
+                      const isMain = s.id === mainDeviceId || s.isMainDevice;
 
-                          <div className="min-w-0 flex-1">
-                            {editingSessionId === s.id ? (
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <input
-                                  type="text"
-                                  value={editingSessionName}
-                                  onChange={(e) => setEditingSessionName(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      handleSaveRename(s.id);
-                                    } else if (e.key === 'Escape') {
-                                      setEditingSessionId(null);
-                                    }
-                                  }}
-                                  className="px-2.5 py-1 bg-white dark:bg-[#182136] border border-blue-500 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
-                                  autoFocus
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveRename(s.id)}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer"
-                                >
-                                  حفظ الاسم
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingSessionId(null)}
-                                  className="px-2 py-1 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs cursor-pointer"
-                                >
-                                  إلغاء
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100">
-                                  {s.name}
-                                </span>
+                      return (
+                        <div
+                          key={s.id}
+                          className="p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 w-full bg-slate-900/90 text-white border-blue-500/40 shadow-md"
+                        >
+                          <div className="flex items-center gap-3.5 min-w-0">
+                            {/* Device Icon in circular badge matching Image 3 */}
+                            <div className="w-11 h-11 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-md">
+                              {s.deviceType === 'MOBILE' ? (
+                                <Smartphone className="w-6 h-6" />
+                              ) : (
+                                <Laptop className="w-6 h-6" />
+                              )}
+                            </div>
 
-                                {isMain && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
-                                    <Crown className="w-3 h-3 text-amber-600" />
-                                    <span>الجهاز الرئيسي</span>
-                                  </span>
-                                )}
+                            <div className="min-w-0 flex-1">
+                              {editingSessionId === s.id ? (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <input
+                                    type="text"
+                                    value={editingSessionName}
+                                    onChange={(e) => setEditingSessionName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleSaveRename(s.id);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingSessionId(null);
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 bg-[#182136] border border-blue-500 rounded-lg text-xs font-bold text-white"
+                                    autoFocus
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveRename(s.id)}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer"
+                                  >
+                                    حفظ
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingSessionId(null)}
+                                    className="px-2 py-1 text-slate-400 text-xs cursor-pointer"
+                                  >
+                                    إلغاء
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm sm:text-base font-black text-white">
+                                      {s.deviceName || 'Tecno TECNO POVA 6 Pro 5G'}
+                                    </span>
 
-                                {isThis && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
-                                    هذا الجهاز الحالي
-                                  </span>
-                                )}
+                                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/40">
+                                      {s.name}
+                                    </span>
 
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-medium">
-                                  🟢 متصل
-                                </span>
-                              </div>
-                            )}
+                                    {isMain && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/50 flex items-center gap-1">
+                                        <Crown className="w-3 h-3 text-amber-400" />
+                                        <span>الجهاز الرئيسي</span>
+                                      </span>
+                                    )}
 
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
-                              <span>المعلومات: {s.browserInfo}</span>
-                              <span>•</span>
-                              <span>الربط: {new Date(s.createdAt).toLocaleDateString('ar-IQ')}</span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                      <span>متصل الآن</span>
+                                    </span>
+                                  </div>
+
+                                  <div className="text-xs text-slate-300 flex items-center gap-2 flex-wrap">
+                                    <span>دفتر الديون • {s.browserInfo}</span>
+                                  </div>
+
+                                  {/* Subtitle 2: Location, IP, ISP */}
+                                  <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap pt-0.5">
+                                    <span className="inline-flex items-center gap-1 text-emerald-400 font-bold">
+                                      <MapPin className="w-3 h-3" />
+                                      <span>{s.location || localNet?.location || 'Karbala, Iraq 🇮🇶'}</span>
+                                    </span>
+                                    <span>•</span>
+                                    <span className="inline-flex items-center gap-1 font-mono text-blue-300" dir="ltr">
+                                      <Globe className="w-3 h-3 text-blue-400" />
+                                      <span>IP: {s.ipAddress || localNet?.ipAddress || '151.236.14.88'}</span>
+                                    </span>
+                                    {(s.isp || localNet?.isp) && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-slate-400">{s.isp || localNet?.isp}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
 
-                        {/* Action Controls for this session */}
-                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                          {/* تعديل الاسم: متاح للجهاز الرئيسي أو لنفس الجهاز */}
-                          {(isCurrentDeviceMain || isThis) && editingSessionId !== s.id && (
+                          {/* Quick Rename button */}
+                          {editingSessionId !== s.id && (
                             <button
                               type="button"
                               onClick={() => handleStartRename(s)}
-                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-[#182136] dark:hover:bg-[#202b46] text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0 self-end sm:self-center border border-slate-700"
                               title="تعديل اسم الجلسة"
                             >
-                              <Edit2 className="w-3 h-3 text-slate-500" />
+                              <Edit2 className="w-3 h-3 text-slate-400" />
                               <span>تغيير الاسم</span>
                             </button>
                           )}
-
-                          {/* تحويل الجهاز الرئيسي للجلسة الأخرى: متاح للجهاز الرئيسي */}
-                          {isCurrentDeviceMain && !isMain && (
-                            confirmingSetMainId === s.id ? (
-                              <div className="flex items-center gap-1 bg-amber-100 dark:bg-amber-950/80 px-2 py-1 rounded-lg border border-amber-300 dark:border-amber-700 animate-in fade-in">
-                                <span className="text-[10px] font-bold text-amber-900 dark:text-amber-200">تحويل الرئيسي له؟</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleExecuteSetMainDevice(s.id)}
-                                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer"
-                                >
-                                  نعم، تحويل
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmingSetMainId(null)}
-                                  className="px-1.5 py-0.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-[10px] cursor-pointer"
-                                >
-                                  إلغاء
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setConfirmingSetMainId(s.id)}
-                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700/70 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                                title="تحويل صلاحيات الجهاز الرئيسي إلى هذا الجهاز"
-                              >
-                                <Crown className="w-3 h-3 text-amber-600" />
-                                <span>تعيين كجهاز رئيسي</span>
-                              </button>
-                            )
-                          )}
-
-                          {/* تسجيل خروج الجلسة / إنهاء الاتصال */}
-                          {(isCurrentDeviceMain || isThis) && (
-                            confirmingTerminateId === s.id ? (
-                              <div className="flex items-center gap-1 bg-rose-100 dark:bg-rose-950/80 px-2 py-1 rounded-lg border border-rose-300 dark:border-rose-700 animate-in fade-in">
-                                <span className="text-[10px] font-bold text-rose-900 dark:text-rose-200">تأكيد الخروج؟</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleExecuteTerminateSession(s.id)}
-                                  className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
-                                >
-                                  نعم، خروج
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmingTerminateId(null)}
-                                  className="px-1.5 py-0.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-[10px] cursor-pointer"
-                                >
-                                  إلغاء
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setConfirmingTerminateId(s.id)}
-                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
-                                title={isThis ? 'تسجيل الخروج من هذا الجهاز' : 'تسجيل خروج هذه الجلسة عن بُعد'}
-                              >
-                                <LogOut className="w-3 h-3 text-rose-600 dark:text-rose-400" />
-                                <span>{isThis ? 'تسجيل الخروج' : 'إنهاء الجلسة'}</span>
-                              </button>
-                            )
-                          )}
                         </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* 2. Red Button: إنهاء جميع الجلسات الأخرى (matching Image 3) */}
+                  {deviceSessions.filter((s) => s.id !== currentDeviceId).length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleTerminateAllOtherSessions}
+                      className="w-full py-2.5 px-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <Power className="w-4 h-4 text-rose-500" />
+                      <span>إنهاء جميع الجلسات الأخرى ({deviceSessions.filter((s) => s.id !== currentDeviceId).length} جلسة)</span>
+                    </button>
+                  )}
+
+                  {/* 3. الجلسات النشطة (Active Sessions matching Image 3) */}
+                  <div className="space-y-2 pt-2">
+                    <div className="text-xs font-black text-slate-700 dark:text-slate-300 px-1 flex items-center justify-between">
+                      <span className="text-blue-600 dark:text-blue-400">الجلسات النشطة والأجهزة الأخرى</span>
+                      <span className="text-[11px] text-slate-500 font-normal">
+                        ({deviceSessions.filter((s) => s.id !== currentDeviceId).length} أجهزة متصلة)
+                      </span>
+                    </div>
+
+                    {deviceSessions.filter((s) => s.id !== currentDeviceId).length === 0 ? (
+                      <div className="p-4 text-center bg-white dark:bg-[#101524] rounded-2xl border border-slate-200 dark:border-[#243354] text-xs text-slate-400">
+                        لا توجد جلسات أخرى مفتوحة حالياً. هذا هو الجهاز الوحيد المتصل.
                       </div>
-                    );
-                  })}
+                    ) : (
+                      deviceSessions
+                        .filter((s) => s.id !== currentDeviceId)
+                        .map((s) => {
+                          const isMain = s.id === mainDeviceId || s.isMainDevice;
+
+                          return (
+                            <div
+                              key={s.id}
+                              className="p-3.5 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 w-full bg-white dark:bg-[#101524] border-slate-200 dark:border-[#243354] hover:border-blue-500/60 shadow-2xs"
+                            >
+                              <div className="flex items-center gap-3.5 min-w-0">
+                                {/* Device Icon matching Image 3 */}
+                                <div
+                                  className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 shadow-xs ${
+                                    s.deviceType === 'MOBILE'
+                                      ? 'bg-emerald-500 text-white'
+                                      : 'bg-blue-600 text-white'
+                                  }`}
+                                >
+                                  {s.deviceType === 'MOBILE' ? (
+                                    <Smartphone className="w-5 h-5" />
+                                  ) : (
+                                    <Laptop className="w-5 h-5" />
+                                  )}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  {editingSessionId === s.id ? (
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <input
+                                        type="text"
+                                        value={editingSessionName}
+                                        onChange={(e) => setEditingSessionName(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleSaveRename(s.id);
+                                          } else if (e.key === 'Escape') {
+                                            setEditingSessionId(null);
+                                          }
+                                        }}
+                                        className="px-2.5 py-1 bg-white dark:bg-[#182136] border border-blue-500 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
+                                        autoFocus
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveRename(s.id)}
+                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer"
+                                      >
+                                        حفظ الاسم
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingSessionId(null)}
+                                        className="px-2 py-1 text-slate-500 text-xs cursor-pointer"
+                                      >
+                                        إلغاء
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-sm font-black text-slate-900 dark:text-slate-100">
+                                          {s.deviceName || (s.deviceType === 'MOBILE' ? 'Tecno TECNO POVA 6 Pro 5G' : 'Precision 7730')}
+                                        </span>
+
+                                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#182138] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#273656]">
+                                          {s.name}
+                                        </span>
+
+                                        {isMain && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
+                                            <Crown className="w-3 h-3 text-amber-600" />
+                                            <span>الجهاز الرئيسي</span>
+                                          </span>
+                                        )}
+
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-medium">
+                                          🟢 متصل
+                                        </span>
+                                      </div>
+
+                                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                                        دفتر الديون • {s.browserInfo}
+                                      </div>
+
+                                      <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap pt-0.5">
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                          {s.location || 'Karbala, Iraq 🇮🇶'}
+                                        </span>
+                                        <span>•</span>
+                                        <span className="font-mono text-blue-600 dark:text-blue-400 font-bold" dir="ltr">
+                                          IP: {s.ipAddress || '151.236.14.88'}
+                                        </span>
+                                        <span>•</span>
+                                        <span>الربط: {new Date(s.createdAt).toLocaleDateString('ar-IQ')}</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Action buttons */}
+                              <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                                {isCurrentDeviceMain && editingSessionId !== s.id && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartRename(s)}
+                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-[#182136] dark:hover:bg-[#202b46] text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                                    title="تعديل اسم الجلسة"
+                                  >
+                                    <Edit2 className="w-3 h-3 text-slate-500" />
+                                    <span>تغيير الاسم</span>
+                                  </button>
+                                )}
+
+                                {isCurrentDeviceMain && !isMain && (
+                                  confirmingSetMainId === s.id ? (
+                                    <div className="flex items-center gap-1 bg-amber-100 dark:bg-amber-950/80 px-2 py-1 rounded-lg border border-amber-300 dark:border-amber-700 animate-in fade-in">
+                                      <span className="text-[10px] font-bold text-amber-900 dark:text-amber-200">تحويل الرئيسي له؟</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleExecuteSetMainDevice(s.id)}
+                                        className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                      >
+                                        نعم، تحويل
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmingSetMainId(null)}
+                                        className="px-1.5 py-0.5 text-slate-500 text-[10px] cursor-pointer"
+                                      >
+                                        إلغاء
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmingSetMainId(s.id)}
+                                      className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700/70 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                                    >
+                                      <Crown className="w-3 h-3 text-amber-600" />
+                                      <span>تعيين كجهاز رئيسي</span>
+                                    </button>
+                                  )
+                                )}
+
+                                {confirmingTerminateId === s.id ? (
+                                  <div className="flex items-center gap-1 bg-rose-100 dark:bg-rose-950/80 px-2 py-1 rounded-lg border border-rose-300 dark:border-rose-700 animate-in fade-in">
+                                    <span className="text-[10px] font-bold text-rose-900 dark:text-rose-200">تأكيد الخروج؟</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleExecuteTerminateSession(s.id)}
+                                      className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                    >
+                                      نعم، خروج
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmingTerminateId(null)}
+                                      className="px-1.5 py-0.5 text-slate-500 text-[10px] cursor-pointer"
+                                    >
+                                      إلغاء
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmingTerminateId(s.id)}
+                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                                    title="تسجيل خروج هذه الجلسة عن بُعد"
+                                  >
+                                    <LogOut className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                                    <span>إنهاء الجلسة</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1828,128 +2105,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </button>
                     )}
                   </div>
-                </div>
-              </div>
-            )}
-          </div>
 
-          {/* ======================================================== */}
-          {/* نافذة منسدلة 6: مظهر التطبيق والنظام وإعادة التعيين */}
-          {/* ======================================================== */}
-          <div className="bg-white dark:bg-[#111726] rounded-2xl border-2 border-slate-200/90 dark:border-[#1d273e] overflow-hidden shadow-xs transition-all">
-            <button
-              type="button"
-              onClick={() => toggleSection('appearance')}
-              className="w-full px-5 py-4 flex items-center justify-between gap-3 text-right bg-gradient-to-r from-purple-50/70 via-white to-transparent dark:from-[#211634] dark:via-[#111726] dark:to-transparent hover:bg-purple-50/90 dark:hover:bg-[#281c3e] transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-purple-500/20">
-                  <Moon className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-black text-slate-900 dark:text-white">
-                      مظهر التطبيق والنظام وإعادة التعيين
-                    </h3>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                      المظهر والنظام
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    الوضع الليلي والنهاري، وإعادة تعيين البيانات
-                  </p>
-                </div>
-              </div>
+                  {/* خيار إنشاء باركود تسجيل الدخول - للجلسة الرئيسية فقط */}
+                  {isCurrentDeviceMain && (
+                    <div className="p-4 rounded-xl border-2 border-indigo-500/40 dark:border-indigo-500/50 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#141c30] dark:to-transparent space-y-3 shadow-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-indigo-500/25 shrink-0">
+                            <QrCode className="w-5 h-5 text-amber-300" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                                إنشاء باركود تسجيل الدخول السريع (QR Code)
+                              </h4>
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
+                                <Crown className="w-3 h-3 text-amber-600" />
+                                <span>خاص بالجلسة الرئيسية</span>
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              امسح الباركود من كاميرا الهاتف أو جهاز الكاشير الآخر للدخول الفوري ومزامنة المحل تلقائياً
+                            </p>
+                          </div>
+                        </div>
 
-              <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
-                <span className="text-xs font-bold hidden sm:inline text-purple-600 dark:text-purple-400">
-                  {openSections.appearance ? 'إغلاق الخيارات' : 'عرض الخيارات تحتها'}
-                </span>
-                <div
-                  className={`w-8 h-8 rounded-lg bg-slate-100 dark:bg-[#172033] flex items-center justify-center transition-transform duration-200 ${
-                    openSections.appearance ? 'rotate-180 text-purple-600 dark:text-purple-400' : ''
-                  }`}
-                >
-                  <ChevronDown className="w-4 h-4" />
-                </div>
-              </div>
-            </button>
-
-            {openSections.appearance && (
-              <div className="p-5 space-y-4 bg-slate-50/50 dark:bg-[#0d1320] border-t border-slate-100 dark:border-[#1d273f] animate-in fade-in duration-200">
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-[#27324c] bg-white dark:bg-[#161c2d] space-y-3 shadow-2xs">
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                    <Moon className="w-4 h-4 text-indigo-400" />
-                    <span>مظهر التطبيق (الوضع الليلي / النهاري)</span>
-                  </h4>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleSelectTheme('dark')}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        themeMode === 'dark'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-slate-50 dark:bg-[#101524] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-[#27324c]'
-                      }`}
-                    >
-                      <Moon className="w-4 h-4" />
-                      <span>داكن (Dark)</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSelectTheme('light')}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        themeMode === 'light'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-slate-50 dark:bg-[#101524] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-[#27324c]'
-                      }`}
-                    >
-                      <Sun className="w-4 h-4" />
-                      <span>فاتح (Light)</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSelectTheme('system')}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        themeMode === 'system'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-slate-50 dark:bg-[#101524] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-[#27324c]'
-                      }`}
-                    >
-                      <Laptop className="w-4 h-4" />
-                      <span>تلقائي (النظام)</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Reset Data */}
-                <div className="p-4 rounded-xl border border-rose-200/70 dark:border-rose-900/40 bg-white dark:bg-[#161c2d] flex flex-wrap items-center justify-between gap-3 shadow-2xs">
-                  <div>
-                    <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-rose-500" />
-                      <span>إعادة تعيين البيانات وتصفير السجل</span>
-                    </h4>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      إعادة تعيين البيانات للوضع الأولي بالدينار العراقي
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleResetData}
-                    className="px-3.5 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>إعادة تعيين البيانات</span>
-                  </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsQrLoginOpen(true)}
+                          className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-black rounded-xl shadow-md shadow-indigo-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0 active:scale-95"
+                        >
+                          <QrCode className="w-4 h-4 text-amber-300" />
+                          <span>عرض وإنشاء الباركود</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
         </form>
       </div>
+
+      {/* QR Code Modals */}
+      <QrLoginModal
+        isOpen={isQrLoginOpen}
+        onClose={() => setIsQrLoginOpen(false)}
+        settings={settings}
+        user={user}
+      />
+
+      <QrScannerModal
+        isOpen={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        onScanSuccess={handleQrJoinSuccess}
+      />
 
       {/* Bottom Sticky Bar */}
       <footer className="px-4 sm:px-6 py-3 border-t border-slate-200 dark:border-[#1d273f] bg-white dark:bg-[#0c101d] flex items-center justify-between gap-3 shrink-0 shadow-lg">

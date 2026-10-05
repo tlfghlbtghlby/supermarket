@@ -46,6 +46,8 @@ import {
   saveCurrentSessionName,
 } from './utils/storage';
 import { getOrCreateDeviceId, getInitialDeviceSessions } from './utils/deviceSession';
+import { parseQrJoinData } from './utils/qrAuth';
+import { loginWithEmailOrPhone } from './lib/firebase';
 import { Header } from './components/Header';
 import { StatsCards } from './components/StatsCards';
 import { DebtorList } from './components/DebtorList';
@@ -61,6 +63,18 @@ import { AuthModal } from './components/AuthModal';
 import { SessionModal } from './components/SessionModal';
 import { LoginScreen } from './components/LoginScreen';
 import { GeminiAssistantModal } from './components/GeminiAssistantModal';
+import {
+  loadLocalLicense,
+  evaluateLicense,
+  syncLicenseToCloud,
+  subscribeToRemoteLicense,
+  isOfficialAdmin,
+  LicenseRecord,
+  LicenseEvaluation,
+} from './utils/licenseSystem';
+import { LicenseBanner } from './components/LicenseBanner';
+import { LicenseInfoModal } from './components/LicenseInfoModal';
+import { AdminPanelModal } from './components/AdminPanelModal';
 import {
   CheckCircle2,
   AlertCircle,
@@ -157,10 +171,62 @@ export default function App() {
   const [currentSessionName, setCurrentSessionName] = useState<string>(() => loadCurrentSessionName());
   const [isSessionModalOpen, setIsSessionModalOpen] = useState<boolean>(false);
 
+  // License & Subscription System State
+  const [licenseRecord, setLicenseRecord] = useState<LicenseRecord>(() => loadLocalLicense());
+  const [isLicenseModalOpen, setIsLicenseModalOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+
+  // Check if logged in with official admin email (tlfghlbtghlby@gmail.com)
+  const isAdmin = useMemo(() => {
+    return isOfficialAdmin(user, appUser, settings);
+  }, [user, appUser, settings]);
+
+  const licenseEvaluation: LicenseEvaluation = useMemo(() => {
+    return evaluateLicense(licenseRecord, isAdmin);
+  }, [licenseRecord, isAdmin]);
+
+  const isReadOnly = licenseEvaluation.isReadOnly;
+
+  // Background Cloud Registration & Real-Time Sync
+  useEffect(() => {
+    syncLicenseToCloud(licenseRecord);
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToRemoteLicense(licenseRecord.id, (updated) => {
+      setLicenseRecord(updated);
+    });
+
+    const handleLocalUpdate = (e: any) => {
+      if (e.detail) {
+        setLicenseRecord(e.detail);
+      }
+    };
+    window.addEventListener('license_updated', handleLocalUpdate);
+
+    return () => {
+      unsub();
+      window.removeEventListener('license_updated', handleLocalUpdate);
+    };
+  }, [licenseRecord.id]);
+
   // WhatsApp Prompt & Logout Confirm States
   const [whatsAppPrompt, setWhatsAppPrompt] = useState<WhatsAppAlertPrompt | null>(null);
   const [hasCopiedWhatsAppMsg, setHasCopiedWhatsAppMsg] = useState<boolean>(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState<boolean>(false);
+
+  // Toast feedback
+  const [toastMessage, setToastMessage] = useState<{
+    text: string;
+    type?: 'success' | 'info' | 'warn';
+  } | null>(null);
+
+  const showToast = useCallback((text: string, type: 'success' | 'info' | 'warn' = 'success') => {
+    setToastMessage({ text, type });
+    setTimeout(() => {
+      setToastMessage((prev) => (prev?.text === text ? null : prev));
+    }, 4000);
+  }, []);
 
   // Phone/Android Hardware & Gesture Back Button Handler
   const isPopStateRef = useRef(false);
@@ -175,7 +241,11 @@ export default function App() {
       isPopStateRef.current = true;
 
       // Close topmost modal/overlay or return to main view
-      if (isGeminiAssistantOpen) {
+      if (isAdminPanelOpen) {
+        setIsAdminPanelOpen(false);
+      } else if (isLicenseModalOpen) {
+        setIsLicenseModalOpen(false);
+      } else if (isGeminiAssistantOpen) {
         setIsGeminiAssistantOpen(false);
       } else if (isSessionModalOpen) {
         setIsSessionModalOpen(false);
@@ -268,6 +338,31 @@ export default function App() {
     }
   }, [settings.deviceSessions, currentSessionName]);
 
+  // Handle QR barcode join link from URL params (?join=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const joinParam = urlParams.get('join');
+      if (joinParam) {
+        const parsed = parseQrJoinData(joinParam);
+        if (parsed && parsed.email) {
+          loginWithEmailOrPhone(parsed.email, parsed.passwordCode || '123123')
+            .then(() => {
+              showToast(`تم مسح الباركود بنجاح والربط بمتجر: ${parsed.storeName || 'المحل'}!`);
+              // Clean the URL without reloading
+              window.history.replaceState({}, document.title, window.location.pathname);
+            })
+            .catch((err) => {
+              console.warn('Auto join QR error:', err);
+            });
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [showToast]);
+
   // View navigation helper that pushes state to history
   const handleViewChange = useCallback(
     (newView: 'DEBTORS' | 'CUSTOMERS' | 'DASHBOARD' | 'SUPPLIERS') => {
@@ -355,19 +450,6 @@ export default function App() {
       window.history.back();
     }
   }, []);
-
-  // Toast feedback
-  const [toastMessage, setToastMessage] = useState<{
-    text: string;
-    type?: 'success' | 'info' | 'warn';
-  } | null>(null);
-
-  const showToast = (text: string, type: 'success' | 'info' | 'warn' = 'success') => {
-    setToastMessage({ text, type });
-    setTimeout(() => {
-      setToastMessage((prev) => (prev?.text === text ? null : prev));
-    }, 4000);
-  };
 
   // Compute debtors with real-time stats
   const debtorsWithStats = useMemo(() => {
@@ -531,6 +613,11 @@ export default function App() {
     debtorData: Omit<Debtor, 'id' | 'createdAt'>,
     existingId?: string
   ) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط. يرجى تفعيل الاشتراك لإضافة أو تعديل الزبائن.', 'warn');
+      setIsLicenseModalOpen(true);
+      return;
+    }
     await saveDebtor(debtorData, existingId);
     if (existingId) {
       showToast(`تم تحديث بيانات الزبون "${debtorData.name}" بنجاح.`);
@@ -540,6 +627,11 @@ export default function App() {
   };
 
   const handleDeleteDebtor = async (debtorId: string, debtorName: string) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط. لا يمكن حذف الزبائن.', 'warn');
+      setIsLicenseModalOpen(true);
+      return;
+    }
     if (
       confirm(
         `هل أنت متأكد من رغبتك في حذف الزبون "${debtorName}" وجميع حركات ديونه ومشترياته السابقة نهائياً؟`
@@ -566,6 +658,11 @@ export default function App() {
     autoOpenWhatsApp?: boolean;
     sessionName?: string;
   }) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط. يرجى تفعيل الاشتراك لتسجيل حركات ديون أو تسديدات.', 'warn');
+      setIsLicenseModalOpen(true);
+      return;
+    }
     const targetDebtor = debtorsWithStats.find((d) => d.id === data.debtorId);
     const debtorName = targetDebtor?.name || 'الزبون';
     const previousBalance = targetDebtor?.currentBalance || 0;
@@ -711,22 +808,40 @@ export default function App() {
   };
 
   const handleUpdateTransactionNotes = async (transactionId: string, notes: string) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط.', 'warn');
+      return;
+    }
     await updateTransactionNotes(transactionId, notes);
     showToast('تم حفظ ملاحظات الحركة بنجاح.');
   };
 
   const handleUpdateTransactionGroup = async (transactionId: string, groupName: string) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط.', 'warn');
+      return;
+    }
     await updateTransactionGroup(transactionId, groupName);
     showToast('تم تحديث تصنيف الحركة بنجاح.');
   };
 
   const handleDeleteTransaction = async (transactionId: string) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط. لا يمكن حذف الحركات.', 'warn');
+      setIsLicenseModalOpen(true);
+      return;
+    }
     await deleteTransaction(transactionId);
     showToast('تم حذف الحركة وتحديث الرصيد.');
   };
 
   // Handlers for Suppliers
   const handleAddSupplier = (supplierData: Omit<Supplier, 'id' | 'createdAt'>) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط. يرجى تفعيل الاشتراك لإضافة موردين جدد.', 'warn');
+      setIsLicenseModalOpen(true);
+      return;
+    }
     const newSupplier: Supplier = {
       ...supplierData,
       id: 'sup_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
@@ -739,6 +854,11 @@ export default function App() {
   };
 
   const handleUpdateSupplier = (updatedSupplier: Supplier) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط.', 'warn');
+      setIsLicenseModalOpen(true);
+      return;
+    }
     const updated = suppliers.map((s) => (s.id === updatedSupplier.id ? updatedSupplier : s));
     setSuppliers(updated);
     saveSuppliers(updated);
@@ -746,6 +866,11 @@ export default function App() {
   };
 
   const handleDeleteSupplier = (supplierId: string) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط.', 'warn');
+      setIsLicenseModalOpen(true);
+      return;
+    }
     const sup = suppliers.find((s) => s.id === supplierId);
     const updatedSuppliers = suppliers.filter((s) => s.id !== supplierId);
     const updatedTx = supplierTransactions.filter((t) => t.supplierId !== supplierId);
@@ -765,6 +890,11 @@ export default function App() {
     notes?: string;
     paymentMethod?: PaymentMethod;
   }) => {
+    if (isReadOnly) {
+      showToast('البرنامج حالياً بوضع المعاينة فقط. يرجى تفعيل الاشتراك لتسجيل فواتير الموردين.', 'warn');
+      setIsLicenseModalOpen(true);
+      return;
+    }
     const newTx: SupplierTransaction = {
       ...data,
       id: 'stx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
@@ -923,6 +1053,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-100 dark:bg-[#0b0f19] text-slate-900 dark:text-slate-100 font-sans transition-colors">
+      {/* License & Trial Subscription Top Banner */}
+      <LicenseBanner
+        evaluation={licenseEvaluation}
+        onOpenLicenseModal={() => setIsLicenseModalOpen(true)}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
+      />
+
       {/* Top Header */}
       <Header
         settings={settings}
@@ -948,6 +1085,10 @@ export default function App() {
         onLogout={handleLogout}
         onOpenPhoneAuth={() => setIsAuthModalOpen(true)}
         onForceSync={handleForceSync}
+        licenseEvaluation={licenseEvaluation}
+        onOpenLicenseModal={() => setIsLicenseModalOpen(true)}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
+        isReadOnly={isReadOnly}
       />
 
       {/* Main Content Area */}
@@ -973,7 +1114,7 @@ export default function App() {
                       {debtors.length} زبون
                     </span>
                   </div>
-                  <div className="text-xs font-normal text-slate-500 dark:text-slate-400 truncate">
+                  <div className="text-xs font-normal text-slate-500 dark:text-slate-400">
                     اضغط لفتح واجهة كافة الزبائن وكشوفاتهم
                   </div>
                 </div>
@@ -1047,18 +1188,18 @@ export default function App() {
                             className="p-3 bg-slate-50 dark:bg-[#101524] rounded-xl border border-slate-200 dark:border-[#243354] hover:border-blue-500 flex flex-col justify-between gap-2 transition-all shadow-2xs"
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <button
                                   type="button"
                                   onClick={() => handleSelectDebtor(debtor.id)}
-                                  className="font-black text-sm text-slate-900 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 text-right truncate block cursor-pointer"
+                                  className="font-black text-sm text-slate-900 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 text-right break-words block cursor-pointer"
                                 >
                                   {debtor.name}
                                 </button>
-                                <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5" dir="ltr">
-                                  {debtor.phone && <span>{debtor.phone}</span>}
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-0.5">
+                                  {debtor.phone && <span dir="ltr">{debtor.phone}</span>}
                                   {debtor.address && (
-                                    <span className="truncate max-w-[120px]" dir="rtl">
+                                    <span className="break-words" dir="rtl">
                                       {debtor.address}
                                     </span>
                                   )}
@@ -1147,6 +1288,8 @@ export default function App() {
               onDeleteDebtor={handleDeleteDebtor}
               onAddNewDebtor={() => handleOpenAddDebtor(null)}
               onPrintDebtor={(d) => handleOpenPrint(d.id)}
+              isReadOnly={isReadOnly}
+              onOpenLicenseModal={() => setIsLicenseModalOpen(true)}
             />
           </div>
         ) : activeView === 'SUPPLIERS' ? (
@@ -1160,6 +1303,8 @@ export default function App() {
             onDeleteSupplier={handleDeleteSupplier}
             onAddSupplierTransaction={handleAddSupplierTransaction}
             onDeleteSupplierTransaction={handleDeleteSupplierTransaction}
+            isReadOnly={isReadOnly}
+            onOpenLicenseModal={() => setIsLicenseModalOpen(true)}
           />
         ) : (
           /* View 4: لوحة الإحصائيات (Dashboard) */
@@ -1186,8 +1331,17 @@ export default function App() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
                 type="button"
-                onClick={() => handleOpenQuickTx('DEBT', null)}
-                className="p-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold flex items-center justify-between shadow-xs transition-colors cursor-pointer"
+                onClick={() => {
+                  if (isReadOnly) {
+                    showToast('البرنامج في وضع العرض فقط. يرجى تفعيل الاشتراك لإضافة ديون جديدة.', 'warn');
+                    setIsLicenseModalOpen(true);
+                  } else {
+                    handleOpenQuickTx('DEBT', null);
+                  }
+                }}
+                className={`p-4 rounded-2xl text-white font-bold flex items-center justify-between shadow-xs transition-colors cursor-pointer ${
+                  isReadOnly ? 'bg-slate-700 hover:bg-slate-600' : 'bg-rose-600 hover:bg-rose-700'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
@@ -1195,7 +1349,7 @@ export default function App() {
                   </div>
                   <div className="text-right">
                     <div className="text-sm">تسجيل دين جديد</div>
-                    <div className="text-xs font-normal opacity-90">مشتريات آجل لمواطن</div>
+                    <div className="text-xs font-normal opacity-90">{isReadOnly ? 'وضع العرض فقط' : 'مشتريات آجل لمواطن'}</div>
                   </div>
                 </div>
                 <span className="text-xs font-mono bg-white/25 px-2 py-1 rounded-lg">+ دين</span>
@@ -1203,8 +1357,17 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => handleOpenQuickTx('PAYMENT', null)}
-                className="p-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-between shadow-xs transition-colors cursor-pointer"
+                onClick={() => {
+                  if (isReadOnly) {
+                    showToast('البرنامج في وضع العرض فقط. يرجى تفعيل الاشتراك لتسجيل الدفعات.', 'warn');
+                    setIsLicenseModalOpen(true);
+                  } else {
+                    handleOpenQuickTx('PAYMENT', null);
+                  }
+                }}
+                className={`p-4 rounded-2xl text-white font-bold flex items-center justify-between shadow-xs transition-colors cursor-pointer ${
+                  isReadOnly ? 'bg-slate-700 hover:bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
@@ -1212,7 +1375,7 @@ export default function App() {
                   </div>
                   <div className="text-right">
                     <div className="text-sm">قبض دفعة نقدية</div>
-                    <div className="text-xs font-normal opacity-90">تسديد كامل أو جزئي</div>
+                    <div className="text-xs font-normal opacity-90">{isReadOnly ? 'وضع العرض فقط' : 'تسديد كامل أو جزئي'}</div>
                   </div>
                 </div>
                 <span className="text-xs font-mono bg-white/25 px-2 py-1 rounded-lg">+ قبض</span>
@@ -1221,10 +1384,17 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  setDebtorToEdit(null);
-                  setIsAddDebtorOpen(true);
+                  if (isReadOnly) {
+                    showToast('البرنامج في وضع العرض فقط. يرجى تفعيل الاشتراك لإضافة زبائن جدد.', 'warn');
+                    setIsLicenseModalOpen(true);
+                  } else {
+                    setDebtorToEdit(null);
+                    setIsAddDebtorOpen(true);
+                  }
                 }}
-                className="p-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center justify-between shadow-xs transition-colors cursor-pointer"
+                className={`p-4 rounded-2xl text-white font-bold flex items-center justify-between shadow-xs transition-colors cursor-pointer ${
+                  isReadOnly ? 'bg-slate-700 hover:bg-slate-600' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
@@ -1232,7 +1402,7 @@ export default function App() {
                   </div>
                   <div className="text-right">
                     <div className="text-sm">إضافة زبون جديد</div>
-                    <div className="text-xs font-normal opacity-90">فتح دفتر حساب</div>
+                    <div className="text-xs font-normal opacity-90">{isReadOnly ? 'وضع العرض فقط' : 'فتح دفتر حساب'}</div>
                   </div>
                 </div>
                 <span className="text-xs font-mono bg-white/25 px-2 py-1 rounded-lg">+ زبون</span>
@@ -1440,6 +1610,8 @@ export default function App() {
         onUpdateTransactionGroup={handleUpdateTransactionGroup}
         onEditDebtor={(d) => handleOpenAddDebtor(d)}
         onPrint={(d) => handleOpenPrint(d.id)}
+        isReadOnly={isReadOnly}
+        onOpenLicenseModal={() => setIsLicenseModalOpen(true)}
       />
 
       {/* Quick Transaction Modal (Debt / Payment) - Rendered after DebtorDetailModal to guarantee top stacking */}
@@ -1550,6 +1722,10 @@ export default function App() {
         onSetThemeMode={setThemeMode}
         currentSessionName={currentSessionName}
         onSetCurrentSessionName={handleSaveSessionName}
+        licenseEvaluation={licenseEvaluation}
+        onOpenLicenseModal={() => setIsLicenseModalOpen(true)}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
+        isReadOnly={isReadOnly}
       />
 
       {/* Phone Number Authentication & Password Reset Modal */}
@@ -1560,6 +1736,27 @@ export default function App() {
         onLogout={handlePhoneAuthLogout}
         onClose={() => setIsAuthModalOpen(false)}
       />
+
+      {/* License Status & HWID Modal */}
+      <LicenseInfoModal
+        isOpen={isLicenseModalOpen}
+        onClose={() => setIsLicenseModalOpen(false)}
+        evaluation={licenseEvaluation}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
+      />
+
+      {/* Hidden Admin Control Panel (Exclusive for tlfghlbtghlby@gmail.com) */}
+      {isAdmin && (
+        <AdminPanelModal
+          isOpen={isAdminPanelOpen}
+          onClose={() => setIsAdminPanelOpen(false)}
+          currentHwid={licenseRecord.id}
+          onLicenseChanged={() => {
+            setLicenseRecord(loadLocalLicense());
+          }}
+          showToast={showToast}
+        />
+      )}
     </div>
   );
 }
