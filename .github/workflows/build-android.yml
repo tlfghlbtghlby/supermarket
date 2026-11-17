@@ -1,0 +1,87 @@
+name: Build Android APK
+
+# يبني ملف APK تلقائياً عند كل رفع إلى main، ويمكن تشغيله يدوياً من تبويب Actions.
+# النتيجة: Artifacts → SupermarketDebtBook-Android-APK (نسخة debug تُثبَّت مباشرة على الهاتف).
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+
+      - name: Build web app
+        run: npm run build
+        env:
+          NODE_OPTIONS: "--max_old_space_size=4096"
+
+      - name: Add Android platform
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+
+      - name: Generate app icons
+        continue-on-error: true
+        run: |
+          mkdir -p assets
+          cp public/icon-512.png assets/icon.png
+          npx --yes @capacitor/assets generate --android
+
+      - name: Sync web assets to Android
+        run: npx cap sync android
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+      - name: Make Gradle executable
+        run: chmod +x android/gradlew
+
+      - name: Raise Gradle download timeout
+        run: |
+          f=android/gradle/wrapper/gradle-wrapper.properties
+          if grep -q '^networkTimeout' "$f"; then sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$f"; else echo 'networkTimeout=120000' >> "$f"; fi
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build debug APK
+        run: |
+          cd android
+          for i in 1 2 3; do ./gradlew assembleDebug --stacktrace && break; echo "retry $i"; sleep 20; done
+          ls app/build/outputs/apk/debug/*.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SupermarketDebtBook-Android-APK
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

@@ -1,3 +1,21 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
+
+/* ===== إحساس تطبيق أندرويد الأصلي (يُطبَّق على شاشات اللمس فقط) ===== */
+@media (pointer: coarse) {
+  html { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+  body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; padding-bottom: env(safe-area-inset-bottom); }
+  input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
+  /* أهداف لمس مريحة وتأثير ضغط سريع مثل Material */
+  button, [role="button"], a { touch-action: manipulation; transition: transform 90ms ease, filter 90ms ease, opacity 90ms ease; }
+  button:not(:disabled):active, [role="button"]:active { transform: scale(0.96); filter: brightness(0.93); }
+  /* تمرير ناعم وإخفاء أشرطة التمرير كالتطبيقات */
+  * { scrollbar-width: none; }
+  *::-webkit-scrollbar { display: none; }
+  html { scroll-behavior: smooth; }
+}
+@media (prefers-reduced-motion: reduce) {
+  button, [role="button"], a { transition: none !important; }
+  html { scroll-behavior: auto; }
+}

@@ -49,7 +49,7 @@
           }
         } catch(e) {}
       })();
-      if ('serviceWorker' in navigator) {
+      if ('serviceWorker' in navigator && !window.Capacitor) {
         navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function(err) {
           console.log('SW registration note:', err);
         });
