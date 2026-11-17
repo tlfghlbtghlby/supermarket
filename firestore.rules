@@ -10,7 +10,7 @@ service cloud.firestore {
 
     // Helper functions
     function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+      return id is string && id.size() > 0 && id.size() <= 128;
     }
 
     function incoming() {
@@ -108,63 +108,63 @@ service cloud.firestore {
 
     // Debtors Collection
     match /debtors/{debtorId} {
-      allow get: if isSignedIn() && isValidId(debtorId) && (resource == null || resource.data.userId == request.auth.uid);
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isOfficialAdmin());
+      allow list: if isSignedIn() && (request.auth.uid != null);
       allow create: if isSignedIn() && isValidId(debtorId) 
                     && incoming().id == debtorId 
                     && incoming().userId == request.auth.uid 
                     && isValidDebtor(incoming());
       allow update: if isSignedIn() && isValidId(debtorId) 
-                    && (resource == null || existing().userId == request.auth.uid) 
+                    && (resource == null || existing().userId == request.auth.uid || isOfficialAdmin()) 
                     && incoming().userId == request.auth.uid 
                     && incoming().id == debtorId 
                     && isValidDebtor(incoming());
       allow delete: if isSignedIn() && isValidId(debtorId) 
-                    && (resource == null || existing().userId == request.auth.uid);
+                    && (resource == null || existing().userId == request.auth.uid || isOfficialAdmin());
     }
 
     // Transactions Collection
     match /transactions/{transactionId} {
-      allow get: if isSignedIn() && isValidId(transactionId) && (resource == null || resource.data.userId == request.auth.uid);
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isOfficialAdmin());
+      allow list: if isSignedIn() && (request.auth.uid != null);
       allow create: if isSignedIn() && isValidId(transactionId) 
                     && incoming().id == transactionId 
                     && incoming().userId == request.auth.uid 
                     && isValidTransaction(incoming());
       allow update: if isSignedIn() && isValidId(transactionId) 
-                    && (resource == null || existing().userId == request.auth.uid) 
+                    && (resource == null || existing().userId == request.auth.uid || isOfficialAdmin()) 
                     && incoming().userId == request.auth.uid 
                     && incoming().id == transactionId 
                     && isValidTransaction(incoming());
       allow delete: if isSignedIn() && isValidId(transactionId) 
-                    && (resource == null || existing().userId == request.auth.uid);
+                    && (resource == null || existing().userId == request.auth.uid || isOfficialAdmin());
     }
 
     // Store Settings Collection
     match /settings/{settingId} {
-      allow get: if isSignedIn() && isValidId(settingId) && (settingId == request.auth.uid || (resource != null && resource.data.userId == request.auth.uid));
-      allow list: if isSignedIn() && resource != null && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && (settingId == request.auth.uid || (resource != null && resource.data.userId == request.auth.uid) || isOfficialAdmin() || resource == null);
+      allow list: if isSignedIn() && (request.auth.uid != null);
       allow create: if isSignedIn() && isValidId(settingId) 
-                    && settingId == request.auth.uid
+                    && (settingId == request.auth.uid || isOfficialAdmin())
                     && incoming().userId == request.auth.uid 
                     && isValidStoreSettings(incoming());
       allow update: if isSignedIn() && isValidId(settingId) 
-                    && settingId == request.auth.uid
+                    && (settingId == request.auth.uid || isOfficialAdmin())
                     && incoming().userId == request.auth.uid 
                     && isValidStoreSettings(incoming());
       allow delete: if isSignedIn() && isValidId(settingId) 
-                    && settingId == request.auth.uid;
+                    && (settingId == request.auth.uid || isOfficialAdmin());
     }
 
     // Users Collection
     match /users/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isSignedIn() && (userId == request.auth.uid || isOfficialAdmin());
+      allow list: if isSignedIn() && (request.auth.uid != null);
       allow create, update: if isSignedIn() && isValidId(userId) 
-                            && userId == request.auth.uid 
+                            && (userId == request.auth.uid || isOfficialAdmin())
                             && incoming().uid == request.auth.uid 
                             && isValidUserProfile(incoming());
-      allow delete: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || isOfficialAdmin());
     }
 
     // License Validator & Admin Check
